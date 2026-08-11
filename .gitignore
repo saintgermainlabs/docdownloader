@@ -19,5 +19,7 @@ dist/
 
 # Project specific
 output/
+/srv/knowledge/
+docs.db
 .env
 *.log 

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": [
+    "src/index.ts",
+    "src/crawler/browser.ts",
+    "src/crawler/queue.ts",
+    "src/crawler/urlUtils.ts",
+    "src/converter/markdown.ts",
+    "src/storage/database.ts",
+    "src/storage/fileSystem.ts",
+    "src/storage/paths.ts",
+    "src/github_docs/index.ts",
+    "src/github_docs/downloader.ts",
+    "src/github_docs/githubApi.ts",
+    "src/scripts/processList.ts",
+    "src/scripts/importDocs.ts"
+  ],
+  "out": "docs/build/typedoc",
+  "json": "docs/build/typedoc.json",
+  "name": "ai-doc-downloader API Documentation",
+  "readme": "README.md",
+  "plugin": []
+}

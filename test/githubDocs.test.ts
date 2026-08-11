@@ -38,4 +38,14 @@ describe('github_docs module', () => {
     const title = extractTitleFromContent('# Awesome OpenClaw Usecases\nHello world', 'readme.md');
     assert.strictEqual(title, 'Awesome OpenClaw Usecases');
   });
+
+  test('auto-detects awesome keyword in repo URL', () => {
+    const url1 = 'https://github.com/aliaihub/awesome-hermes-usecases';
+    const isAwesome1 = /awesome/i.test(url1);
+    assert.strictEqual(isAwesome1, true);
+
+    const url2 = 'https://github.com/facebook/react';
+    const isAwesome2 = /awesome/i.test(url2);
+    assert.strictEqual(isAwesome2, false);
+  });
 });

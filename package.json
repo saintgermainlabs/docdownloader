@@ -8,7 +8,10 @@
     "start": "node dist/src/index.js",
     "import-docs": "tsc && node dist/src/scripts/importDocs.js",
     "process-list": "tsc && node dist/src/scripts/processList.js",
-    "github-docs": "tsc && node dist/src/github_docs/index.js"
+    "github-docs": "tsc && node dist/src/github_docs/index.js",
+    "docs:typedoc": "typedoc",
+    "docs:sphinx": "typedoc && sphinx-build -b html docs docs/build/sphinx",
+    "docs": "npm run docs:typedoc"
   },
   "keywords": [],
   "author": "",
@@ -24,6 +27,8 @@
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^20.11.24",
     "@types/turndown": "^5.0.4",
+    "tsx": "^4.23.12",
+    "typedoc": "^0.28.20",
     "typescript": "^5.3.3"
   }
 }

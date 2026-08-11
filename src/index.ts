@@ -5,20 +5,40 @@ import { normalizeUrl, isUrlInScope, CrawlScope } from './crawler/urlUtils';
 import { MarkdownConverter } from './converter/markdown';
 import { FileStorage } from './storage/fileSystem';
 import { VisitedDatabase, computeHash, extractDefaultSlug } from './storage/database';
+import { resolveOutputDir } from './storage/paths';
 
+/**
+ * Parsed CLI options for the primary `ai-doc-downloader` web crawler.
+ */
 export interface CliOptions {
+  /** Target seed URL string */
   url: string;
+  /** Base destination directory */
   outputDir: string;
+  /** Crawl scope constraint (`'subfolder'` or `'website'`) */
   scope: CrawlScope;
+  /** Parallel worker count */
   concurrency: number;
+  /** Optional custom SQLite database path */
   dbPath?: string;
+  /** Force re-downloading previously visited pages */
   force: boolean;
+  /** Human-readable source name */
   name?: string;
+  /** Summary description of the documentation source */
   description?: string;
+  /** Custom source slug */
   slug?: string;
+  /** Whether help was requested */
   help: boolean;
 }
 
+/**
+ * Parses command-line arguments for the primary crawler CLI.
+ *
+ * @param argv - Array of command-line argument strings.
+ * @returns Parsed {@link CliOptions} object.
+ */
 export function parseCliArgs(argv: string[]): CliOptions {
   let url = '';
   let outputDir = './output';
@@ -111,6 +131,19 @@ export function parseCliArgs(argv: string[]): CliOptions {
   return { url, outputDir, scope, concurrency, dbPath, force, name, description, slug, help };
 }
 
+/**
+ * Main application entrypoint for executing web documentation crawls.
+ *
+ * @param startUrl - Initial URL to start crawling from.
+ * @param outputDir - Destination directory path (default: `./output`).
+ * @param scope - Crawl scope constraint (`'subfolder'` or `'website'`).
+ * @param concurrency - Number of parallel Playwright browser workers.
+ * @param dbPath - SQLite database tracking path (default: `./docs.db`).
+ * @param force - Force re-downloading previously recorded URLs.
+ * @param name - Human-readable documentation source name.
+ * @param description - Summary description of the documentation source.
+ * @param slug - Source slug key.
+ */
 export async function main(
   startUrl: string,
   outputDir: string = './output',
@@ -121,13 +154,14 @@ export async function main(
   name?: string,
   description?: string,
   slug?: string
-) {
+): Promise<void> {
   const finalDbPath = dbPath || './docs.db';
   const db = new VisitedDatabase(finalDbPath);
 
   const sourceSlug = slug || extractDefaultSlug(startUrl);
   const sourceName = name || new URL(startUrl).hostname;
   const sourceDesc = description || '';
+  const finalOutputDir = resolveOutputDir(sourceSlug, 'repo', 'awesome', outputDir);
 
   db.recordSource({
     slug: sourceSlug,
@@ -139,7 +173,7 @@ export async function main(
   const browser = new BrowserManager();
   const queue = new CrawlerQueue({ db, force });
   const converter = new MarkdownConverter();
-  const storage = new FileStorage(outputDir);
+  const storage = new FileStorage(finalOutputDir);
 
   await browser.init();
   const initialUrl = normalizeUrl(startUrl, startUrl) || startUrl;
@@ -217,31 +251,54 @@ export async function main(
   }
 }
 
-// Usage example
+/**
+ * Prints comprehensive help information for the primary crawler CLI.
+ */
+export function printMainCliHelp(): void {
+  console.log(`
+ai-doc-downloader - TypeScript Web Documentation Harvester
+
+USAGE:
+  npm start -- <url> [outputDir] [scope] [options]
+  node dist/src/index.js <url> [outputDir] [scope] [options]
+
+ARGUMENTS:
+  <url>                         Base seed URL to crawl (e.g. https://docs.openclaw.ai/)
+  [outputDir]                   Directory to save Markdown files (default: ./output)
+  [scope]                       Crawl scope: 'subfolder' or 'website' (default: subfolder)
+
+OPTIONS:
+  --concurrency, -c <N>         Number of parallel Playwright workers (default: 1)
+  --scope, -s, --mode, -m <M>   Set scope: 'subfolder' or 'website'
+  --subfolder                   Shortcut for --scope=subfolder
+  --website                     Shortcut for --scope=website
+  --name <name>                 Human-readable documentation source name
+  --description, --desc <desc>  Summary description of the service or documentation
+  --slug <slug>                 Custom source slug key (default: first URL path segment)
+  --db <path>                   Path to SQLite database file (default: ./docs.db)
+  --force, -f                   Force re-downloading previously visited pages
+  --help, -h                    Display this help message
+
+ENVIRONMENT VARIABLES:
+  HOST_ENV=remote               Routes output directory to /srv/knowledge/documentation/<slug>/
+
+EXAMPLES:
+  # Crawl subfolder documentation with 5 parallel workers:
+  npm start -- https://docs.openclaw.ai/ -c 5
+
+  # Crawl with custom metadata and slug:
+  npm start -- https://docs.openclaw.ai/ --name "OpenClaw Docs" --slug "openclaw" -c 5
+
+  # Remote environment execution:
+  HOST_ENV=remote npm start -- https://tailscale.com/docs/ -c 5
+`);
+}
+
 if (require.main === module) {
   const options = parseCliArgs(process.argv.slice(2));
 
   if (options.help || !options.url) {
-    console.log(`
-Usage: ai-doc-downloader <url> [outputDir] [scope] [options]
-
-Arguments:
-  <url>       Base URL to crawl
-  [outputDir] Directory to save Markdown files (default: "./output")
-  [scope]     Crawl scope: "subfolder" or "website" (default: "subfolder")
-
-Options:
-  --concurrency, -c <N>                         Number of concurrent workers (default: 1)
-  --scope, -s, --mode, -m <subfolder|website>   Specify crawl scope
-  --subfolder                                    Crawl starting URL subfolder and its subfolders
-  --website                                      Crawl whole website (same domain)
-  --name <name>                                  Human-readable source name
-  --description, --desc <description>            Description of the service or documentation
-  --slug <slug>                                  Custom source slug (defaults to first path segment)
-  --db <path>                                    Path to SQLite database file
-  --force, -f                                    Force re-downloading previously visited pages
-  --help, -h                                     Show this help message
-`);
+    printMainCliHelp();
     if (!options.url && !options.help) {
       process.exit(1);
     }
@@ -264,4 +321,4 @@ Options:
     options.description,
     options.slug
   ).catch(console.error);
-} 
+}

@@ -1,17 +1,26 @@
 import { GithubDocsOptions } from './types';
 import { downloadGithubDocs } from './downloader';
 
+/**
+ * Parses command-line arguments for the `github-docs` CLI command.
+ *
+ * @param argv - Array of command-line argument strings.
+ * @returns Parsed {@link GithubDocsOptions} object.
+ */
 export function parseGithubCliArgs(argv: string[]): GithubDocsOptions {
   let repoUrl = '';
   let readme = true;
-  let type: 'repo' | 'list' = 'repo';
+  let type: 'repo' | 'list' | undefined;
   let listType = 'awesome';
   let tree: string | false = false;
   let dbPath = './docs.db';
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg.startsWith('--readme=')) {
+    if (arg === '--help' || arg === '-h') {
+      printGithubDocsHelp();
+      process.exit(0);
+    } else if (arg.startsWith('--readme=')) {
       readme = arg.split('=')[1] !== 'false';
     } else if (arg === '--no-readme' || arg === '--readme=false') {
       readme = false;
@@ -57,23 +66,49 @@ export function parseGithubCliArgs(argv: string[]): GithubDocsOptions {
   return { repoUrl, readme, type, listType, tree, dbPath };
 }
 
+/**
+ * Prints comprehensive help information for the `github-docs` CLI command.
+ */
+export function printGithubDocsHelp(): void {
+  console.log(`
+github-docs CLI - Automatic GitHub Documentation & List Downloader
+
+USAGE:
+  npm run github-docs -- <repoUrl> [options]
+  node dist/src/github_docs/index.js <repoUrl> [options]
+
+ARGUMENTS:
+  <repoUrl>                     GitHub repository or sub-tree URL
+                                (e.g. https://github.com/aliaihub/awesome-hermes-usecases)
+
+OPTIONS:
+  --readme=true|false           Download root README.md file (default: true)
+  --type=repo|list              Storage type: 'repo' or 'list' (auto-detected if URL contains 'awesome')
+  --list-type=<name>            Category folder under output root for lists (default: awesome)
+  --tree=<subpath>              Specific repository subfolder to download recursively
+  --db=<path>                   SQLite database path (default: ./docs.db)
+  --help, -h                    Display this help message
+
+ENVIRONMENT VARIABLES:
+  HOST_ENV=remote               Routes output to /srv/knowledge/documentation or /srv/knowledge/awesome
+
+EXAMPLES:
+  # Download repo automatically (auto-detects awesome list and subtrees):
+  npm run github-docs -- https://github.com/aliaihub/awesome-hermes-usecases
+
+  # Download specific subtree:
+  npm run github-docs -- https://github.com/owner/repo --tree=docs
+
+  # Remote environment execution:
+  HOST_ENV=remote npm run github-docs -- https://github.com/facebook/react
+`);
+}
+
 if (require.main === module) {
   const options = parseGithubCliArgs(process.argv.slice(2));
 
   if (!options.repoUrl) {
-    console.log(`
-Usage: npm run github-docs -- <repoUrl> [options]
-
-Arguments:
-  <repoUrl>                      GitHub repository or tree URL (e.g. https://github.com/owner/repo)
-
-Options:
-  --readme=true|false             Download README.md to root of output directory (default: true)
-  --type=repo|list                Specify storage structure: 'repo' or 'list' (default: repo)
-  --list-type=<name>              Specify category directory when --type=list (default: awesome)
-  --tree=<subpath>                Subfolder tree path to download recursively
-  --db=<path>                     SQLite database path (default: ./docs.db)
-`);
+    printGithubDocsHelp();
     process.exit(1);
   }
 

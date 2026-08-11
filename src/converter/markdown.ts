@@ -1,8 +1,24 @@
 import TurndownService from 'turndown';
 
+/**
+ * HTML to Markdown converter using Turndown with customized clean rules.
+ *
+ * @remarks
+ * Strips script tags, inline CSS, nav/footer elements, tracking attributes,
+ * and unwanted JSON/CSS noise patterns (`:root`, `try {`, `{"props":`).
+ *
+ * @example
+ * ```typescript
+ * const converter = new MarkdownConverter();
+ * const markdown = converter.convert('<h1>Title</h1><p>Hello world</p>');
+ * ```
+ */
 export class MarkdownConverter {
   private turndown: TurndownService;
 
+  /**
+   * Initializes Turndown instance with fenced code block and clean HTML replacement rules.
+   */
   constructor() {
     this.turndown = new TurndownService({
       codeBlockStyle: 'fenced',
@@ -11,19 +27,16 @@ export class MarkdownConverter {
       hr: '---'
     });
 
-    // Remove style tags and their content
     this.turndown.addRule('removeStyles', {
       filter: ['style'],
       replacement: () => ''
     });
 
-    // Remove script tags and their content
     this.turndown.addRule('removeScripts', {
       filter: ['script'],
       replacement: () => ''
     });
 
-    // Handle code blocks better
     this.turndown.addRule('pre', {
       filter: 'pre',
       replacement: (content, node) => {
@@ -33,7 +46,6 @@ export class MarkdownConverter {
       }
     });
 
-    // Remove unnecessary attributes from links
     this.turndown.addRule('links', {
       filter: 'a',
       replacement: (content, node) => {
@@ -43,7 +55,6 @@ export class MarkdownConverter {
       }
     });
 
-    // Clean up images
     this.turndown.addRule('images', {
       filter: 'img',
       replacement: (content, node) => {
@@ -54,59 +65,59 @@ export class MarkdownConverter {
       }
     });
 
-    // Remove common unnecessary elements
     this.turndown.remove(['nav', 'footer', 'aside', 'script', 'style', 'meta', 'iframe']);
   }
 
+  /**
+   * Converts an HTML string into formatted Markdown.
+   *
+   * @param html - Raw HTML content string.
+   * @returns Cleaned Markdown output string.
+   */
   convert(html: string): string {
-    // Pre-process HTML to remove unnecessary elements
     const cleanHtml = this.preProcessHtml(html);
-    // Convert to Markdown
     const markdown = this.turndown.turndown(cleanHtml);
-    // Post-process Markdown to clean up the result
     return this.postProcessMarkdown(markdown);
   }
 
+  /**
+   * Sanitizes raw HTML prior to Turndown conversion.
+   *
+   * @param html - Input HTML.
+   * @returns Preprocessed HTML string.
+   */
   private preProcessHtml(html: string): string {
-    // Remove HTML comments
     html = html.replace(/<!--[\s\S]*?-->/g, '');
-    
-    // Remove data attributes
     html = html.replace(/ data-[^=]+="[^"]*"/g, '');
-    
-    // Remove common tracking and unnecessary attributes
     html = html.replace(/ (class|id|style|onclick|onload|aria-[a-z]+)="[^"]*"/g, '');
-    
     return html;
   }
 
+  /**
+   * Post-processes generated Markdown to strip unwanted code artifacts and normalize whitespace.
+   *
+   * @param markdown - Unprocessed Markdown string.
+   * @returns Final cleaned Markdown string.
+   */
   private postProcessMarkdown(markdown: string): string {
-    // Define patterns to skip
     const patternsToSkip = [
       ':root',
       'try {',
       '{"props":'
     ];
 
-    // Split content into lines, filter unwanted lines, and rejoin
     return markdown
       .split('\n')
       .filter(line => {
         const trimmedLine = line.trim();
-        // Keep empty lines and lines that don't start with skip patterns
         return !trimmedLine || !patternsToSkip.some(pattern => trimmedLine.startsWith(pattern));
       })
       .join('\n')
-      // Remove multiple consecutive blank lines
       .replace(/\n{3,}/g, '\n\n')
-      // Remove trailing whitespace
       .replace(/[ \t]+$/gm, '')
-      // Remove spaces before list markers
       .replace(/^[ \t]+(-|\*|\+|\d+\.) /gm, '$1 ')
-      // Clean up code blocks (ensure proper spacing)
       .replace(/```(\w*)\n\n/g, '```$1\n')
       .replace(/\n\n```/g, '\n```')
-      // Trim the final result
       .trim();
   }
-} 
+}
