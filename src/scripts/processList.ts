@@ -165,7 +165,7 @@ OPTIONS:
   --help, -h                  Display this help message
 
 ENVIRONMENT VARIABLES:
-  HOST_ENV=remote             Routes outputs to /srv/knowledge/documentation/<slug>/
+  HOST_ENV=remote             Routes outputs to /srv/knowledge/documents/<slug>/
 
 EXAMPLES:
   # Process default data/pending.yaml list:

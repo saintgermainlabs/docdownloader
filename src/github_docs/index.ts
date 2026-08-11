@@ -90,7 +90,7 @@ OPTIONS:
   --help, -h                    Display this help message
 
 ENVIRONMENT VARIABLES:
-  HOST_ENV=remote               Routes output to /srv/knowledge/documentation or /srv/knowledge/awesome
+  HOST_ENV=remote               Routes output to /srv/knowledge/documents or /srv/knowledge/awesome
 
 EXAMPLES:
   # Download repo automatically (auto-detects awesome list and subtrees):

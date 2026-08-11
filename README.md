@@ -17,7 +17,7 @@ A powerful TypeScript-based web crawler and documentation harvester that downloa
   - Automatically detects `awesome` lists from repository URLs.
   - Fetches `README.md` to the root of the output directory.
   - Auto-discovers target tree folders (`docs`, `usecases`, `categories`) and downloads files into their respective subfolders.
-- **Remote Environment Routing (`HOST_ENV=remote`)**: Routes output automatically to `/srv/knowledge/documentation` or `/srv/knowledge/awesome`.
+- **Remote Environment Routing (`HOST_ENV=remote`)**: Routes output automatically to `/srv/knowledge/documents` or `/srv/knowledge/awesome`.
 
 ---
 
@@ -109,7 +109,7 @@ npm run github-docs -- "https://github.com/aliaihub/awesome-hermes-usecases"
 Set `HOST_ENV=remote` to automatically direct outputs to `/srv/knowledge`:
 
 ```bash
-# Saves standard docs to /srv/knowledge/documentation/<slug>/
+# Saves standard docs to /srv/knowledge/documents/<slug>/
 HOST_ENV=remote npm start -- "https://tailscale.com/docs"
 
 # Saves awesome lists to /srv/knowledge/awesome/<repoName>/
@@ -118,7 +118,7 @@ HOST_ENV=remote npm run github-docs -- "https://github.com/aliaihub/awesome-herm
 # Saves clippings to /srv/knowledge/clippings/
 HOST_ENV=remote npm run clip -- "https://example.com/article"
 
-# Batch process list into /srv/knowledge/documentation/
+# Batch process list into /srv/knowledge/documents/
 HOST_ENV=remote npm run process-list
 ```
 

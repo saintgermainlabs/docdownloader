@@ -280,7 +280,7 @@ OPTIONS:
   --help, -h                    Display this help message
 
 ENVIRONMENT VARIABLES:
-  HOST_ENV=remote               Routes output directory to /srv/knowledge/documentation/<slug>/
+  HOST_ENV=remote               Routes output directory to /srv/knowledge/documents/<slug>/
 
 EXAMPLES:
   # Crawl subfolder documentation with 5 parallel workers:

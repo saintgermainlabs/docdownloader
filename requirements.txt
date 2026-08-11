@@ -29,6 +29,6 @@
    - Automatic `README.md` download.
    - Auto-discovery of root subtrees (`docs`, `usecases`, `categories`).
 8. **Environment-Aware Storage (`HOST_ENV=remote`)**:
-   - Standard documentation: `/srv/knowledge/documentation/<nameOrSlug>`
+   - Standard documentation: `/srv/knowledge/documents/<nameOrSlug>`
    - Awesome lists: `/srv/knowledge/awesome/<nameOrSlug>`
    - Local default: `./output/<nameOrSlug>` or `./output/awesome/<nameOrSlug>`

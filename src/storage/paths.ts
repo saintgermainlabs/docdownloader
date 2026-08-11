@@ -45,11 +45,11 @@ export function resolveBaseOutputDir(
   }
 
   if (isRemoteEnv()) {
-    const remoteRoot = '/srv/knowledge';
+    const remoteRoot = resolveKnowledgeRoot();
     if (type === 'list') {
       return join(remoteRoot, listType || 'awesome');
     }
-    return join(remoteRoot, 'documentation');
+    return join(remoteRoot, 'documents');
   }
 
   const localRoot = './output';

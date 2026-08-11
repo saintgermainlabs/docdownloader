@@ -15,7 +15,7 @@ This guide provides instructions and technical specs for AI agents operating, co
 - **Crawl Resume & Skipping**: Skips re-downloading pages recorded in `./docs.db` while continuing link discovery.
 - **Parallel Workers**: Configurable concurrency via `-c <N>`.
 - **Automatic GitHub Downloader (`github_docs`)**: Auto-classifies `awesome` lists, fetches `README.md`, and recursively downloads `docs/`, `usecases/`, or `categories/` folders.
-- **Remote Environment Routing (`HOST_ENV=remote`)**: Directs outputs to `/srv/knowledge/documentation` or `/srv/knowledge/awesome`.
+- **Remote Environment Routing (`HOST_ENV=remote`)**: Directs outputs to `/srv/knowledge/documents` or `/srv/knowledge/awesome`.
 
 ---
 
@@ -101,7 +101,7 @@ npm run import-docs -- --dir=output/coolify --slug=coolify --name="Coolify Docs"
 
 ### `HOST_ENV`
 - `HOST_ENV=remote`: Automatically sets output root to `/srv/knowledge`.
-  - Repositories/Docs (`--type=repo`): `/srv/knowledge/documentation/<slug>/`
+  - Repositories/Docs (`--type=repo`): `/srv/knowledge/documents/<slug>/`
   - Lists (`--type=list`): `/srv/knowledge/awesome/<slug>/`
   - Clippings (`npm run clip`): `<knowledge-root>/clippings/`
     (`/home/god/projects/knowledge/clippings` locally, `/srv/knowledge/clippings` when `HOST_ENV=remote`)

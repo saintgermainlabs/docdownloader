@@ -40,13 +40,13 @@ describe('paths module', () => {
     delete process.env.KNOWLEDGE_ROOT;
 
     assert.strictEqual(resolveKnowledgeRoot(), '/srv/knowledge');
-    assert.strictEqual(resolveBaseOutputDir('repo'), '/srv/knowledge/documentation');
+    assert.strictEqual(resolveBaseOutputDir('repo'), '/srv/knowledge/documents');
     assert.strictEqual(resolveBaseOutputDir('list', 'awesome'), '/srv/knowledge/awesome');
     assert.strictEqual(resolveBaseOutputDir('list', 'usecases'), '/srv/knowledge/usecases');
     assert.strictEqual(resolveBaseOutputDir('clippings'), '/srv/knowledge/clippings');
     assert.strictEqual(resolveClippingDir(), '/srv/knowledge/clippings');
 
-    assert.strictEqual(resolveOutputDir('react', 'repo'), '/srv/knowledge/documentation/react');
+    assert.strictEqual(resolveOutputDir('react', 'repo'), '/srv/knowledge/documents/react');
     assert.strictEqual(resolveOutputDir('awesome-usecases', 'list', 'awesome'), '/srv/knowledge/awesome/awesome-usecases');
   });
 
