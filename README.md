@@ -61,11 +61,17 @@ npm start -- "https://docs.openclaw.ai/" --force
 ### 2. Single-page Clipping (`npm run clip`)
 
 ```bash
+# OpenClaw / agents: URL must come after --
+npm run clip -- "https://docs.openclaw.ai/plugins/building-plugins"
+
 # Local: /home/god/projects/knowledge/clippings/<date>-<slug>.md
 npm run clip -- "https://docs.openclaw.ai/plugins/building-plugins"
 
 # Remote: /srv/knowledge/clippings/
 HOST_ENV=remote npm run clip -- "https://example.com/article" --title "Example Article"
+
+# Binary (after npm run build && npm link):
+docdownloader-clip "https://example.com/article"
 ```
 
 ### 3. Batch URL Processing (`npm run process-list`)

@@ -2,6 +2,9 @@
   "name": "ai-doc-downloader",
   "version": "1.0.0",
   "main": "dist/src/index.js",
+  "bin": {
+    "docdownloader-clip": "./dist/src/scripts/clip.js"
+  },
   "scripts": {
     "build": "tsc",
     "test": "tsc && node --test dist/test/*.js",

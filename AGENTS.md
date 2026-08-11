@@ -43,6 +43,12 @@ npm start -- "https://docs.openclaw.ai/" --force
 
 Opens one URL in Playwright, converts the main content to Markdown via `MarkdownConverter`, and writes a clipping file (with YAML frontmatter).
 
+**OpenClaw / agents:** always pass the URL after `--` so npm forwards it to the script:
+
+```bash
+npm run clip -- "<URL>"
+```
+
 ```bash
 # Local: /home/god/projects/knowledge/clippings/<date>-<slug>.md
 npm run clip -- "https://docs.openclaw.ai/plugins/building-plugins"
@@ -52,6 +58,9 @@ HOST_ENV=remote npm run clip -- "https://example.com/article" --title "Example A
 
 # Custom output path / filename
 npm run clip -- "https://example.com/post" --out ./clippings --filename my-note.md
+
+# After build + npm link / install, binary is also available:
+docdownloader-clip "https://example.com/article"
 ```
 
 ### 2.3 Automated GitHub Repository Downloader (`npm run github-docs`)

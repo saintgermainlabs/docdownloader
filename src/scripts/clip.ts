@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { BrowserManager } from '../crawler/browser';
