@@ -199,3 +199,18 @@ npm run docs:sphinx
 1. **Use Concurrency `-c 5`**: Always pass `-c 5` (or higher depending on machine resources) for significantly faster crawls.
 2. **Rely on Resume Skipping**: Do not use `--force` unless explicitly requested to re-download existing pages. The default behavior checks `docs.db` and skips downloading existing documents while still extracting child links.
 3. **URL Inputs for `github-docs`**: When handling GitHub URLs, pass only the URL to `npm run github-docs -- <url>`. The module will handle `awesome` classification, README fetching, and sub-tree discovery automatically.
+
+---
+
+## Learned User Preferences
+
+- Default single-page clips to the knowledge `clippings` tree (local `…/knowledge/clippings`, remote `/srv/knowledge/clippings`), not under `./output/`.
+- On remote hosts (`HOST_ENV=remote`), route docs to `documents/` and lists to `awesome/` (not a `documentation/` path).
+- When invoking npm scripts from agents/OpenClaw, always pass the URL after `--` so npm forwards it.
+- Keep executable tools under `/home/god/projects/tools`; knowledge may retain markdown pointers only, not tool code.
+
+## Learned Workspace Facts
+
+- This package lives at `/home/god/projects/tools/docdownloader` as a submodule of the private umbrella repo `saintgermainlabs/tools` (GitHub: `saintgermainlabs/docdownloader`).
+- OpenClaw skills `download_documents` and `website_to_document` wrap this package from `/home/god/dev/tailnet/openclaw/skills/custom/` and sync to `/srv/openclaw/skills/custom/` on the live host.
+- Skill routing for this tool: GitHub URLs → `npm run github-docs`; non-GitHub website crawl → `npm start`; single-page clip → `npm run clip` (clippings); `download_documents` targets the documents tree.
