@@ -1,0 +1,34 @@
+# System & Package Requirements
+
+## System Requirements
+- Node.js >= 18.0.0
+- npm >= 9.0.0
+- Playwright Chromium Browser (`npx playwright install chromium`)
+
+## Package Dependencies
+- playwright (^1.42.1) - Headless browser automation for SPA and dynamic site rendering
+- turndown (^7.1.2) - HTML to Markdown conversion
+- better-sqlite3 (^13.0.3) - SQLite database driver for unified document tracking (docs.db)
+- yaml (^2.9.0) - YAML parsing for batch processing configurations
+
+## Development Dependencies
+- typescript (^5.3.3) - TypeScript compiler
+- @types/node (^20.11.24) - Type definitions for Node.js
+- @types/turndown (^5.0.4) - Type definitions for Turndown
+- @types/better-sqlite3 (^9.6.0) - Type definitions for better-sqlite3
+
+## Core Features & Functionality
+1. **Headless Web Crawling**: Playwright-powered crawler capable of rendering SPAs and JavaScript-heavy documentation sites.
+2. **Markdown Storage**: Converts HTML to clean Markdown format preserving structure, code blocks, and headings.
+3. **Unified SQLite Database (`./docs.db`)**: Central database recording source metadata (`sources` table) and visited document paths (`visited_urls` table).
+4. **Resume & Skipping Support**: Automatically skips re-downloading pages recorded in `docs.db` while continuing link discovery.
+5. **Multi-Worker Concurrency**: Parallelized crawling workers controlled via `--concurrency` / `-c`.
+6. **Batch URL Processing**: Sequential execution of pending URLs from `data/pending.yaml` or `data/pending.json` via `npm run process-list`.
+7. **Automated GitHub Module (`npm run github-docs`)**:
+   - Auto-detection of `awesome` lists in repo URLs.
+   - Automatic `README.md` download.
+   - Auto-discovery of root subtrees (`docs`, `usecases`, `categories`).
+8. **Environment-Aware Storage (`HOST_ENV=remote`)**:
+   - Standard documentation: `/srv/knowledge/documentation/<nameOrSlug>`
+   - Awesome lists: `/srv/knowledge/awesome/<nameOrSlug>`
+   - Local default: `./output/<nameOrSlug>` or `./output/awesome/<nameOrSlug>`
