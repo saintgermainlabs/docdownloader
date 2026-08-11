@@ -39,7 +39,22 @@ npm start -- "https://docs.openclaw.ai/" --name "OpenClaw Docs" --description "O
 npm start -- "https://docs.openclaw.ai/" --force
 ```
 
-### 2.2 Automated GitHub Repository Downloader (`npm run github-docs`)
+### 2.2 Single-page clipping (`npm run clip`)
+
+Opens one URL in Playwright, converts the main content to Markdown via `MarkdownConverter`, and writes a clipping file (with YAML frontmatter).
+
+```bash
+# Local: /home/god/projects/knowledge/clippings/<date>-<slug>.md
+npm run clip -- "https://docs.openclaw.ai/plugins/building-plugins"
+
+# Remote knowledge tree: /srv/knowledge/clippings/
+HOST_ENV=remote npm run clip -- "https://example.com/article" --title "Example Article"
+
+# Custom output path / filename
+npm run clip -- "https://example.com/post" --out ./clippings --filename my-note.md
+```
+
+### 2.3 Automated GitHub Repository Downloader (`npm run github-docs`)
 
 ```bash
 # Auto-detects awesome list vs standard repo & downloads root README + docs/usecases/categories subtrees
@@ -49,7 +64,7 @@ npm run github-docs -- "https://github.com/aliaihub/awesome-hermes-usecases"
 npm run github-docs -- "https://github.com/owner/repo" --tree=docs
 ```
 
-### 2.3 Batch URL List Processing (`npm run process-list`)
+### 2.4 Batch URL List Processing (`npm run process-list`)
 
 Configured in `data/pending.yaml` or `data/pending.json`:
 
@@ -65,7 +80,7 @@ Run batch crawler:
 npm run process-list
 ```
 
-### 2.4 Folder Import into SQLite (`npm run import-docs`)
+### 2.5 Folder Import into SQLite (`npm run import-docs`)
 
 ```bash
 npm run import-docs -- --dir=output/coolify --slug=coolify --name="Coolify Docs"
@@ -79,7 +94,10 @@ npm run import-docs -- --dir=output/coolify --slug=coolify --name="Coolify Docs"
 - `HOST_ENV=remote`: Automatically sets output root to `/srv/knowledge`.
   - Repositories/Docs (`--type=repo`): `/srv/knowledge/documentation/<slug>/`
   - Lists (`--type=list`): `/srv/knowledge/awesome/<slug>/`
-- `HOST_ENV` not set (Local): Output root is `./output/` (or `./output/awesome/<slug>/`).
+  - Clippings (`npm run clip`): `<knowledge-root>/clippings/`
+    (`/home/god/projects/knowledge/clippings` locally, `/srv/knowledge/clippings` when `HOST_ENV=remote`)
+- `HOST_ENV` not set (Local): Docs/lists still use `./output/`; clippings always use the knowledge tree above.
+- `KNOWLEDGE_ROOT`: Optional override for the knowledge root used by clippings.
 
 Example for remote execution:
 ```bash

@@ -12,6 +12,7 @@ A powerful TypeScript-based web crawler and documentation harvester that downloa
 - **Crawl Resume Capabilities**: Skips re-downloading previously processed pages recorded in `./docs.db` while continuing child link discovery.
 - **Parallel Worker Concurrency**: Scalable multi-worker concurrency controlled via `--concurrency` / `-c`.
 - **Batch Processing (`npm run process-list`)**: Sequentially crawls a list of documentation URLs defined in `data/pending.yaml` or `data/pending.json`.
+- **Single-page Clipping (`npm run clip`)**: Opens one URL in Playwright and saves cleaned Markdown under `clippings/`.
 - **Automatic GitHub Downloader (`npm run github-docs`)**:
   - Automatically detects `awesome` lists from repository URLs.
   - Fetches `README.md` to the root of the output directory.
@@ -57,7 +58,17 @@ npm start -- "https://docs.openclaw.ai/" --name "OpenClaw Docs" --description "O
 npm start -- "https://docs.openclaw.ai/" --force
 ```
 
-### 2. Batch URL Processing (`npm run process-list`)
+### 2. Single-page Clipping (`npm run clip`)
+
+```bash
+# Local: /home/god/projects/knowledge/clippings/<date>-<slug>.md
+npm run clip -- "https://docs.openclaw.ai/plugins/building-plugins"
+
+# Remote: /srv/knowledge/clippings/
+HOST_ENV=remote npm run clip -- "https://example.com/article" --title "Example Article"
+```
+
+### 3. Batch URL Processing (`npm run process-list`)
 
 Define pending documentation URLs in `data/pending.yaml`:
 
@@ -76,7 +87,7 @@ npm run process-list
 
 This automatically converts `data/pending.yaml` to `data/pending.json` and crawls each entry sequentially into `./docs.db`.
 
-### 3. Automated GitHub Downloader (`npm run github-docs`)
+### 4. Automated GitHub Downloader (`npm run github-docs`)
 
 ```bash
 # Automatically download a GitHub repository (e.g. awesome list)
@@ -87,7 +98,7 @@ npm run github-docs -- "https://github.com/aliaihub/awesome-hermes-usecases"
 - Downloads `README.md` to root of output directory.
 - Auto-discovers `docs`, `usecases`, or `categories` folders and downloads all files into their subdirectories.
 
-### 4. Remote Environment Routing (`HOST_ENV=remote`)
+### 5. Remote Environment Routing (`HOST_ENV=remote`)
 
 Set `HOST_ENV=remote` to automatically direct outputs to `/srv/knowledge`:
 
@@ -97,6 +108,9 @@ HOST_ENV=remote npm start -- "https://tailscale.com/docs"
 
 # Saves awesome lists to /srv/knowledge/awesome/<repoName>/
 HOST_ENV=remote npm run github-docs -- "https://github.com/aliaihub/awesome-hermes-usecases"
+
+# Saves clippings to /srv/knowledge/clippings/
+HOST_ENV=remote npm run clip -- "https://example.com/article"
 
 # Batch process list into /srv/knowledge/documentation/
 HOST_ENV=remote npm run process-list

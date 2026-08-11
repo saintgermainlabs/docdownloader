@@ -10,13 +10,40 @@ export function isRemoteEnv(): boolean {
 }
 
 /**
+ * Resolves the knowledge-base root directory.
+ *
+ * Priority:
+ * 1. `KNOWLEDGE_ROOT` env override
+ * 2. `/srv/knowledge` when `HOST_ENV=remote`
+ * 3. `/home/god/projects/knowledge` locally
+ *
+ * @returns Absolute knowledge root path.
+ */
+export function resolveKnowledgeRoot(): string {
+  if (process.env.KNOWLEDGE_ROOT) {
+    return process.env.KNOWLEDGE_ROOT;
+  }
+  if (isRemoteEnv()) {
+    return '/srv/knowledge';
+  }
+  return '/home/god/projects/knowledge';
+}
+
+/**
  * Resolves the base root output directory based on storage type and host environment.
  *
- * @param type - Storage type (`'repo'` for docs or `'list'` for awesome lists).
+ * @param type - Storage type (`'repo'` for docs, `'list'` for awesome lists, or `'clippings'` for single-page clips).
  * @param listType - Category directory under list root (default `'awesome'`).
  * @returns Base output directory path string.
  */
-export function resolveBaseOutputDir(type: 'repo' | 'list' = 'repo', listType: string = 'awesome'): string {
+export function resolveBaseOutputDir(
+  type: 'repo' | 'list' | 'clippings' = 'repo',
+  listType: string = 'awesome'
+): string {
+  if (type === 'clippings') {
+    return join(resolveKnowledgeRoot(), 'clippings');
+  }
+
   if (isRemoteEnv()) {
     const remoteRoot = '/srv/knowledge';
     if (type === 'list') {
@@ -30,6 +57,21 @@ export function resolveBaseOutputDir(type: 'repo' | 'list' = 'repo', listType: s
     return join(localRoot, listType || 'awesome');
   }
   return localRoot;
+}
+
+/**
+ * Resolves the destination directory for a single-page clipping.
+ *
+ * Defaults to `<knowledge-root>/clippings` (local knowledge checkout or `/srv/knowledge/clippings`).
+ *
+ * @param customDir - Optional custom output directory override.
+ * @returns Absolute or relative clipping output directory.
+ */
+export function resolveClippingDir(customDir?: string): string {
+  if (customDir && customDir !== './output' && customDir !== 'output') {
+    return customDir;
+  }
+  return resolveBaseOutputDir('clippings');
 }
 
 /**

@@ -8,6 +8,7 @@
     "start": "node dist/src/index.js",
     "import-docs": "tsc && node dist/src/scripts/importDocs.js",
     "process-list": "tsc && node dist/src/scripts/processList.js",
+    "clip": "tsc && node dist/src/scripts/clip.js",
     "github-docs": "tsc && node dist/src/github_docs/index.js",
     "docs:typedoc": "typedoc",
     "docs:sphinx": "typedoc && sphinx-build -b html docs docs/build/sphinx",
