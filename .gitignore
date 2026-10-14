@@ -23,3 +23,8 @@ output/
 docs.db
 .env
 *.log 
+# Generated / local state
+data/
+docs/build/
+.kilo/
+docs.db-*

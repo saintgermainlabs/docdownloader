@@ -5,13 +5,14 @@ import { join } from 'node:path';
 import { VisitedDatabase, computeHash, extractDefaultSlug } from '../src/storage/database';
 
 describe('extractDefaultSlug', () => {
-  test('extracts first path segment as slug', () => {
-    assert.strictEqual(extractDefaultSlug('https://www.quartz-scheduler.org/documentation/quartz-2.5.x/'), 'documentation');
-    assert.strictEqual(extractDefaultSlug('https://react.dev/reference/react'), 'reference');
+  test('extracts meaningful non-generic path segment as slug', () => {
+    assert.strictEqual(extractDefaultSlug('https://www.quartz-scheduler.org/documentation/quartz-2.5.x/'), 'quartz-2.5.x');
+    assert.strictEqual(extractDefaultSlug('https://react.dev/reference/react'), 'react');
   });
 
-  test('falls back to hostname for root paths', () => {
-    assert.strictEqual(extractDefaultSlug('https://www.example.com/'), 'example.com');
+  test('falls back to hostname or subdomain for root/generic paths', () => {
+    assert.strictEqual(extractDefaultSlug('https://www.example.com/'), 'example');
+    assert.strictEqual(extractDefaultSlug('https://hermes-agent.nousresearch.com/docs/'), 'hermes-agent');
   });
 });
 

@@ -88,4 +88,15 @@ describe('parseCliArgs', () => {
     const res = parseCliArgs(['--help']);
     assert.strictEqual(res.help, true);
   });
+
+  test('parses --debug and -d flags', () => {
+    const res1 = parseCliArgs(['https://example.com/docs', '--debug']);
+    assert.strictEqual(res1.debug, true);
+
+    const res2 = parseCliArgs(['https://example.com/docs', '-d']);
+    assert.strictEqual(res2.debug, true);
+
+    const res3 = parseCliArgs(['https://example.com/docs', '--verbose']);
+    assert.strictEqual(res3.debug, true);
+  });
 });

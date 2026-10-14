@@ -64,4 +64,25 @@ export class CrawlerQueue {
   isEmpty(): boolean {
     return this.queue.length === 0;
   }
+
+  /**
+   * Returns the current number of pending items in the queue.
+   */
+  get size(): number {
+    return this.queue.length;
+  }
+
+  /**
+   * Returns the total number of unique URLs enqueued in this session.
+   */
+  get totalSeen(): number {
+    return this.visited.size;
+  }
+
+  /**
+   * Checks if a URL has already been queued or seen in this session.
+   */
+  isSeen(url: string): boolean {
+    return this.visited.has(url);
+  }
 }

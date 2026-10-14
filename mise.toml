@@ -1,0 +1,41 @@
+# Mise configuration for docdownloader & ddocs CLI
+[tools]
+node = "24"
+
+[env]
+_.path = ["./bin", "./node_modules/.bin"]
+# Debug mode: Set DEBUG = "1" or "true" to print every step, browser event, and link discovery detail
+DEBUG = "1"
+DDOCS_DEBUG = "1"
+
+[tasks.build]
+description = "Build TypeScript compiler output"
+run = "npm run build"
+
+[tasks.test]
+description = "Run test suite"
+run = "npm test"
+
+[tasks.start]
+description = "Run main crawler"
+run = "npm start --"
+
+[tasks.clip]
+description = "Run single-page clipper"
+run = "npm run clip --"
+
+[tasks.github-docs]
+description = "Download GitHub documentation"
+run = "npm run github-docs --"
+
+[tasks.docs_dl]
+description = "User-friendly documentation downloader into Obsidian second-brain"
+run = "./bin/docs_dl"
+
+[tasks.ddocs]
+description = "Unified CLI for docdownloader"
+run = "./bin/ddocs"
+
+[tasks.crawl-debug]
+description = "Run ddocs crawl with debug mode enabled"
+run = "DEBUG=1 ./bin/ddocs crawl"

@@ -37,6 +37,9 @@ npm start -- "https://docs.openclaw.ai/" --name "OpenClaw Docs" --description "O
 
 # Force re-downloading previously visited pages
 npm start -- "https://docs.openclaw.ai/" --force
+
+# Run with verbose step-by-step debug logging
+npm start -- "https://docs.openclaw.ai/" --debug -c 5
 ```
 
 ### 2.2 Single-page clipping (`npm run clip`)
@@ -199,3 +202,29 @@ npm run docs:sphinx
 1. **Use Concurrency `-c 5`**: Always pass `-c 5` (or higher depending on machine resources) for significantly faster crawls.
 2. **Rely on Resume Skipping**: Do not use `--force` unless explicitly requested to re-download existing pages. The default behavior checks `docs.db` and skips downloading existing documents while still extracting child links.
 3. **URL Inputs for `github-docs`**: When handling GitHub URLs, pass only the URL to `npm run github-docs -- <url>`. The module will handle `awesome` classification, README fetching, and sub-tree discovery automatically.
+
+---
+
+## 8. Hermes Skill Integration (`doc-downloader`)
+
+The package is packaged as a first-class Hermes skill located at `skills/dev/doc-downloader/SKILL.md` (and registered in `~/.hermes/skills/doc-downloader`).
+
+### Hermes Commands
+
+```bash
+# Auto-detect mode and download
+ddocs <url>
+
+# High-concurrency crawl with debug output enabled
+ddocs crawl <url> --debug -c 5
+
+# Clip a single page note into Obsidian second-brain
+ddocs clip <url>
+
+# Check Obsidian vault connection status
+ddocs vault info
+```
+
+### Hermes Debugging Instructions
+- If a crawl hangs on dynamic SPAs or unknown links, Hermes should pass `--debug` to inspect the millisecond execution timings, HTTP response codes, and link scope evaluations.
+- When `DEBUG=1` is set in `mise.toml` or passed via CLI, every stage (browser launch, context creation, page navigation, DOM extraction, markdown conversion, disk save, and SQLite indexing) outputs diagnostic logs.

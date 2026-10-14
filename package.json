@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "main": "dist/src/index.js",
   "bin": {
-    "docdownloader-clip": "./dist/src/scripts/clip.js"
+    "docs_dl": "./bin/docs_dl",
+    "ddocs": "./bin/ddocs",
+    "docdownloader-clip": "./dist/src/scripts/clip.js",
+    "docdownloader-skill": "./dist/src/skills/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -13,6 +16,8 @@
     "process-list": "tsc && node dist/src/scripts/processList.js",
     "clip": "tsc && node dist/src/scripts/clip.js",
     "github-docs": "tsc && node dist/src/github_docs/index.js",
+    "skill": "tsc && node dist/src/skills/index.js",
+    "download-skill": "tsc && node dist/src/skills/index.js",
     "docs:typedoc": "typedoc",
     "docs:sphinx": "typedoc && sphinx-build -b html docs docs/build/sphinx",
     "docs": "npm run docs:typedoc"

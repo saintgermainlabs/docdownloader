@@ -1,0 +1,364 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# docs_dl - Fast, friendly documentation and clipping downloader for Obsidian
+# ==============================================================================
+set -euo pipefail
+
+REAL_SCRIPT="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "${REAL_SCRIPT}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+DEFAULT_VAULT="second-brain"
+VAULT_NAME="${OBSIDIAN_VAULT:-$DEFAULT_VAULT}"
+
+# Detect Debug Mode
+IS_DEBUG=false
+DEBUG_ENV="${DEBUG:-${DDOCS_DEBUG:-${DOCDOWNLOADER_DEBUG:-0}}}"
+if [[ "$DEBUG_ENV" == "1" || "$DEBUG_ENV" == "true" || "$DEBUG_ENV" == "yes" || "$DEBUG_ENV" == "*" ]]; then
+  IS_DEBUG=true
+fi
+
+# Text formatting
+if [[ -t 1 ]]; then
+  BOLD="$(printf '\033[1m')"
+  GREEN="$(printf '\033[0;32m')"
+  BLUE="$(printf '\033[0;34m')"
+  YELLOW="$(printf '\033[0;33m')"
+  MAGENTA="$(printf '\033[0;35m')"
+  RED="$(printf '\033[0;31m')"
+  RESET="$(printf '\033[0m')"
+else
+  BOLD=""
+  GREEN=""
+  BLUE=""
+  YELLOW=""
+  MAGENTA=""
+  RED=""
+  RESET=""
+fi
+
+log_debug() {
+  if [[ "$IS_DEBUG" == true ]]; then
+    echo -e "${MAGENTA}[DEBUG:docs_dl]${RESET} $*" >&2
+  fi
+}
+
+usage() {
+  cat <<EOF
+${BOLD}docs_dl${RESET} - Download documentation or clip web pages into your Obsidian vault (${VAULT_NAME})
+
+${BOLD}USAGE:${RESET}
+  docs_dl <URL> [OPTIONS]
+
+${BOLD}POSITIONAL ARGUMENTS:${RESET}
+  ${BOLD}<URL>${RESET}                 (Mandatory) Web page, doc site, or GitHub repo URL
+
+${BOLD}OPTIONS:${RESET}
+  ${BOLD}-s, --skill${RESET}           Download agent skills into ${BOLD}skills/${RESET}
+  ${BOLD}-c, --clip${RESET}            Clip single page to ${BOLD}clippings/${RESET}
+  ${BOLD}-w, --crawl${RESET}           Crawl full documentation site into ${BOLD}Documents/${RESET}
+  ${BOLD}-g, --gh, --github${RESET}    Download GitHub repository docs into ${BOLD}Documents/${RESET}
+  ${BOLD}-v, --vault <name>${RESET}    Target Obsidian vault (default: ${VAULT_NAME})
+  ${BOLD}-j, --concurrency <N>${RESET} Worker threads for crawler (default: 3)
+  ${BOLD}-t, --title <title>${RESET}   Custom note/document title
+  ${BOLD}-n, --name <name>${RESET}     Custom source name
+  ${BOLD}-f, --force${RESET}           Re-download even if URL is already in database
+  ${BOLD}-d, --debug${RESET}           Enable verbose step-by-step debug logging
+  ${BOLD}-o, --open${RESET}            Open downloaded file/folder in Obsidian when done
+  ${BOLD}-h, --help${RESET}            Show this help message
+
+${BOLD}AUTO-DETECTION RULES:${RESET}
+  1. ${BOLD}Skills Repository${RESET} (e.g. obsidian-skills) -> Downloads skills into ${BOLD}skills/<name>/${RESET}
+  2. ${BOLD}GitHub URLs${RESET} (github.com/...) -> Downloads repository README & docs into ${BOLD}Documents/<repo>${RESET}
+  3. ${BOLD}Explicit --clip${RESET} or single article/blog -> Saves clipping with frontmatter into ${BOLD}clippings/<date>-<title>.md${RESET}
+  4. ${BOLD}Doc sites / Crawl${RESET} (e.g. /docs) -> Recursively crawls and converts into ${BOLD}Documents/<slug>/${RESET}
+
+${BOLD}DEBUG MODE CONFIGURATION:${RESET}
+  Set ${BOLD}DEBUG = "1"${RESET} in ${BOLD}mise.toml${RESET} or pass ${BOLD}--debug${RESET} to enable deep diagnostics.
+
+${BOLD}EXAMPLES:${RESET}
+  # Download a GitHub repo's documentation into Obsidian Documents/
+  docs_dl https://github.com/astral-sh/uv
+
+  # Clip a single article or blog post into Obsidian clippings/
+  docs_dl https://openclaw.ai/blog/launch --clip
+
+  # Crawl with debug logging
+  docs_dl https://docs.openclaw.ai/ --debug --concurrency 5
+EOF
+}
+
+# Resolve Obsidian Vault Root Path
+resolve_vault_path() {
+  local target_vault="$1"
+  local vault_path=""
+
+  # 1. Try Obsidian CLI if available
+  if command -v obsidian >/dev/null 2>&1; then
+    vault_path="$(obsidian vault="${target_vault}" vault info=path 2>/dev/null | tr -d '\r\n' || true)"
+    log_debug "Obsidian CLI returned vault path: '${vault_path}'"
+  fi
+
+  # 2. Fallback to standard path conventions
+  if [[ -z "${vault_path}" || ! -d "${vault_path}" ]]; then
+    local candidate_paths=(
+      "/home/god/obsidian-vaults/agent/${target_vault}"
+      "/home/god/obsidian-vaults/${target_vault}"
+      "${HOME}/obsidian-vaults/agent/${target_vault}"
+      "${HOME}/obsidian-vaults/${target_vault}"
+      "${HOME}/Documents/Obsidian/${target_vault}"
+    )
+    for p in "${candidate_paths[@]}"; do
+      if [[ -d "$p" ]]; then
+        vault_path="$p"
+        log_debug "Found candidate vault path: '$p'"
+        break
+      fi
+    done
+  fi
+
+  # 3. Fallback to knowledge base or local output
+  if [[ -z "${vault_path}" || ! -d "${vault_path}" ]]; then
+    if [[ -d "/srv/knowledge" ]]; then
+      vault_path="/srv/knowledge"
+    else
+      vault_path="${PROJECT_ROOT}/output"
+    fi
+    log_debug "Using fallback vault/knowledge path: '${vault_path}'"
+  fi
+
+  echo "${vault_path}"
+}
+
+# Ensure TypeScript build is up to date
+ensure_build() {
+  if [[ ! -f "${PROJECT_ROOT}/dist/src/index.js" || ! -f "${PROJECT_ROOT}/dist/src/scripts/clip.js" || ! -f "${PROJECT_ROOT}/dist/src/utils/logger.js" ]]; then
+    log_debug "Compiling TypeScript modules (dist missing)..."
+    echo -e "${BLUE}ℹ Building TypeScript modules...${RESET}"
+    (cd "${PROJECT_ROOT}" && npm run build --silent)
+  fi
+}
+
+# Validate positional arguments
+if [[ $# -eq 0 ]]; then
+  echo -e "${RED}Error: Missing mandatory <URL> argument.${RESET}\n" >&2
+  usage
+  exit 1
+fi
+
+URL=""
+MODE="auto" # auto | skill | clip | crawl | gh
+VAULT="${VAULT_NAME}"
+CONCURRENCY=3
+TITLE=""
+NAME=""
+FORCE=false
+OPEN_AFTER=false
+EXTRA_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -s|--skill|--skills)
+      MODE="skill"
+      shift
+      ;;
+    -c|--clip)
+      MODE="clip"
+      shift
+      ;;
+    -w|--crawl)
+      MODE="crawl"
+      shift
+      ;;
+    -g|--gh|--github)
+      MODE="gh"
+      shift
+      ;;
+    -d|--debug|--verbose)
+      IS_DEBUG=true
+      export DEBUG=1
+      export DDOCS_DEBUG=1
+      EXTRA_ARGS+=("--debug")
+      shift
+      ;;
+    -v|--vault)
+      if [[ $# -lt 2 ]]; then
+        echo -e "${RED}Error: --vault requires a vault name.${RESET}" >&2
+        exit 1
+      fi
+      VAULT="$2"
+      shift 2
+      ;;
+    --vault=*)
+      VAULT="${1#*=}"
+      shift
+      ;;
+    -j|--concurrency)
+      if [[ $# -lt 2 ]]; then
+        echo -e "${RED}Error: --concurrency requires a number.${RESET}" >&2
+        exit 1
+      fi
+      CONCURRENCY="$2"
+      shift 2
+      ;;
+    --concurrency=*)
+      CONCURRENCY="${1#*=}"
+      shift
+      ;;
+    -t|--title)
+      if [[ $# -lt 2 ]]; then
+        echo -e "${RED}Error: --title requires a value.${RESET}" >&2
+        exit 1
+      fi
+      TITLE="$2"
+      shift 2
+      ;;
+    --title=*)
+      TITLE="${1#*=}"
+      shift
+      ;;
+    -n|--name)
+      if [[ $# -lt 2 ]]; then
+        echo -e "${RED}Error: --name requires a value.${RESET}" >&2
+        exit 1
+      fi
+      NAME="$2"
+      shift 2
+      ;;
+    --name=*)
+      NAME="${1#*=}"
+      shift
+      ;;
+    -f|--force)
+      FORCE=true
+      shift
+      ;;
+    -o|--open)
+      OPEN_AFTER=true
+      shift
+      ;;
+    -*)
+      echo -e "${YELLOW}Warning: Unknown option '$1', forwarding to downloader.${RESET}" >&2
+      EXTRA_ARGS+=("$1")
+      shift
+      ;;
+    *)
+      if [[ -z "$URL" ]]; then
+        URL="$1"
+      else
+        EXTRA_ARGS+=("$1")
+      fi
+      shift
+      ;;
+  esac
+done
+
+if [[ -z "$URL" ]]; then
+  echo -e "${RED}Error: Missing mandatory <URL> argument.${RESET}\n" >&2
+  usage
+  exit 1
+fi
+
+ensure_build
+
+VAULT_DIR="$(resolve_vault_path "$VAULT")"
+CLIPPINGS_DIR="${VAULT_DIR}/clippings"
+# Prefer 'Documentation' if it exists in the vault for compatibility, otherwise 'Documents'
+if [[ -d "${VAULT_DIR}/Documentation" ]]; then
+  DOCS_DIR="${VAULT_DIR}/Documentation"
+else
+  DOCS_DIR="${VAULT_DIR}/Documents"
+fi
+
+mkdir -p "${CLIPPINGS_DIR}" "${DOCS_DIR}" "${VAULT_DIR}/skills"
+
+log_debug "Resolved Vault Dir: ${VAULT_DIR}"
+log_debug "Resolved Docs Dir: ${DOCS_DIR}"
+log_debug "Resolved Clippings Dir: ${CLIPPINGS_DIR}"
+log_debug "Resolved Skills Dir: ${VAULT_DIR}/skills"
+
+echo -e "${BOLD}${BLUE}=== docs_dl: Downloading to Obsidian Vault [${VAULT}] ===${RESET}"
+echo -e "${BOLD}Target URL:${RESET}      ${URL}"
+echo -e "${BOLD}Vault Path:${RESET}      ${VAULT_DIR}"
+if [[ "$IS_DEBUG" == true ]]; then
+  echo -e "${BOLD}Debug Mode:${RESET}      ${MAGENTA}ENABLED${RESET}"
+fi
+
+# Determine mode if auto
+if [[ "$MODE" == "auto" ]]; then
+  if [[ "$URL" =~ (skills|skill|agent-skills) ]] && [[ "$URL" =~ github\.com/ ]]; then
+    MODE="skill"
+  elif [[ "$URL" =~ ^https?://(www\.)?github\.com/ ]]; then
+    MODE="gh"
+  elif [[ "$URL" =~ /docs(/|$|\?) ]] || [[ "$URL" =~ /documentation(/|$|\?) ]] || [[ "$URL" =~ /guide(/|$|\?) ]] || [[ "$URL" =~ /manual(/|$|\?) ]]; then
+    MODE="crawl"
+  else
+    # Default single page to clip
+    MODE="clip"
+  fi
+fi
+
+log_debug "Selected Mode: ${MODE}"
+
+case "$MODE" in
+  skill)
+    SKILLS_DIR="${VAULT_DIR}/skills"
+    echo -e "${BOLD}Mode:${RESET}            ${GREEN}Agent Skill Downloader${RESET} -> ${SKILLS_DIR}"
+    export KNOWLEDGE_ROOT="${VAULT_DIR}"
+    
+    SKILL_ARGS=("$URL" "--out" "${SKILLS_DIR}")
+    if [[ "$FORCE" == true ]]; then SKILL_ARGS+=("--force"); fi
+    if [[ -n "$NAME" ]]; then SKILL_ARGS+=("--name" "$NAME"); fi
+    if [[ -n "$TITLE" ]]; then SKILL_ARGS+=("--skill" "$TITLE"); fi
+    
+    log_debug "Executing node dist/src/skills/index.js ${SKILL_ARGS[*]} ${EXTRA_ARGS[*]}"
+    node "${PROJECT_ROOT}/dist/src/skills/index.js" "${SKILL_ARGS[@]}" "${EXTRA_ARGS[@]}"
+    ;;
+
+  gh)
+    echo -e "${BOLD}Mode:${RESET}            ${GREEN}GitHub Repository Docs${RESET} -> ${DOCS_DIR}"
+    export KNOWLEDGE_ROOT="${VAULT_DIR}"
+    
+    GH_ARGS=("$URL" "--outputBaseDir" "${DOCS_DIR}")
+    if [[ -n "$TITLE" ]]; then GH_ARGS+=("--title" "$TITLE"); fi
+    
+    log_debug "Executing node dist/src/github_docs/index.js ${GH_ARGS[*]} ${EXTRA_ARGS[*]}"
+    node "${PROJECT_ROOT}/dist/src/github_docs/index.js" "${GH_ARGS[@]}" "${EXTRA_ARGS[@]}"
+    ;;
+
+  clip)
+    echo -e "${BOLD}Mode:${RESET}            ${GREEN}Single-Page Clipping${RESET} -> ${CLIPPINGS_DIR}"
+    export KNOWLEDGE_ROOT="${VAULT_DIR}"
+    
+    CLIP_ARGS=("$URL" "--out" "${CLIPPINGS_DIR}")
+    if [[ -n "$TITLE" ]]; then CLIP_ARGS+=("--title" "$TITLE"); fi
+    
+    log_debug "Executing node dist/src/scripts/clip.js ${CLIP_ARGS[*]} ${EXTRA_ARGS[*]}"
+    node "${PROJECT_ROOT}/dist/src/scripts/clip.js" "${CLIP_ARGS[@]}" "${EXTRA_ARGS[@]}"
+    ;;
+
+  crawl)
+    echo -e "${BOLD}Mode:${RESET}            ${GREEN}Web Documentation Crawler${RESET} -> ${DOCS_DIR}"
+    export KNOWLEDGE_ROOT="${VAULT_DIR}"
+    
+    CRAWL_ARGS=("$URL" "${DOCS_DIR}" "--concurrency" "${CONCURRENCY}")
+    if [[ "$FORCE" == true ]]; then CRAWL_ARGS+=("--force"); fi
+    if [[ -n "$NAME" ]]; then CRAWL_ARGS+=("--name" "$NAME"); fi
+    if [[ -n "$TITLE" ]]; then CRAWL_ARGS+=("--name" "$TITLE"); fi
+    
+    log_debug "Executing node dist/src/index.js ${CRAWL_ARGS[*]} ${EXTRA_ARGS[*]}"
+    node "${PROJECT_ROOT}/dist/src/index.js" "${CRAWL_ARGS[@]}" "${EXTRA_ARGS[@]}"
+    ;;
+esac
+
+echo -e "\n${GREEN}✔ Download complete! Saved into Obsidian vault: ${VAULT}${RESET}"
+
+# If Obsidian CLI is available and open was requested
+if [[ "$OPEN_AFTER" == true ]] && command -v obsidian >/dev/null 2>&1; then
+  echo -e "${BLUE}Opening note in Obsidian...${RESET}"
+  obsidian vault="${VAULT}" open query="$URL" 2>/dev/null || true
+fi

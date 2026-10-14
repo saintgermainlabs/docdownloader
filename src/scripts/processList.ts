@@ -5,6 +5,7 @@ import { main } from '../index';
 import { extractDefaultSlug, VisitedDatabase } from '../storage/database';
 import { CrawlScope } from '../crawler/urlUtils';
 import { resolveOutputDir } from '../storage/paths';
+import { logger, isDebugEnabled, setDebugMode } from '../utils/logger';
 
 /**
  * Options configuration for a single item in a batch pending list file.
@@ -28,6 +29,8 @@ export interface PendingItemOptions {
   description?: string;
   /** Custom source slug */
   slug?: string;
+  /** Enable debug mode */
+  debug?: boolean;
 }
 
 /**
@@ -81,7 +84,7 @@ export function parsePendingFile(filePath: string): PendingItemOptions[] {
 export function convertYamlToJson(yamlPath: string, jsonPath: string): PendingItemOptions[] {
   const items = parsePendingFile(yamlPath);
   writeFileSync(jsonPath, JSON.stringify({ urls: items }, null, 2), 'utf-8');
-  console.log(`Converted ${yamlPath} -> ${jsonPath}`);
+  logger.info(`Converted ${yamlPath} -> ${jsonPath}`);
   return items;
 }
 
@@ -89,8 +92,13 @@ export function convertYamlToJson(yamlPath: string, jsonPath: string): PendingIt
  * Main batch executor for crawling all pending documentation URLs sequentially into `./docs.db`.
  *
  * @param customFilePath - Optional custom path to a YAML or JSON pending list file.
+ * @param debug - Enable verbose step-by-step debug logging.
  */
-export async function processList(customFilePath?: string): Promise<void> {
+export async function processList(customFilePath?: string, debug?: boolean): Promise<void> {
+  if (debug !== undefined) {
+    setDebugMode(debug);
+  }
+
   const yamlPath = join(process.cwd(), 'data', 'pending.yaml');
   const jsonPath = join(process.cwd(), 'data', 'pending.json');
   const targetFile = customFilePath || (existsSync(yamlPath) ? yamlPath : jsonPath);
@@ -104,8 +112,7 @@ export async function processList(customFilePath?: string): Promise<void> {
   }
 
   const items = parsePendingFile(targetFile);
-
-  console.log(`Found ${items.length} pending documentation URL(s) to process.\n`);
+  logger.step('BATCH', `Found ${items.length} pending documentation URL(s) to process from ${targetFile}`);
 
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
@@ -118,14 +125,13 @@ export async function processList(customFilePath?: string): Promise<void> {
     const force = item.force || false;
     const name = item.name || slug;
     const description = item.description || `${name} Documentation`;
+    const itemDebug = item.debug !== undefined ? item.debug : isDebugEnabled();
 
-    console.log(`--------------------------------------------------`);
-    console.log(`Processing [${i + 1}/${items.length}]: ${url}`);
-    console.log(` - Output Dir: ${outputDir}`);
-    console.log(` - Scope: ${scope}`);
-    console.log(` - Concurrency: ${concurrency}`);
-    console.log(` - Slug: ${slug}`);
-    console.log(`--------------------------------------------------`);
+    logger.banner(`Batch Item [${i + 1}/${items.length}]: ${url}`);
+    logger.debug('BATCH-CONFIG', `Output Dir: ${outputDir}`);
+    logger.debug('BATCH-CONFIG', `Scope: ${scope}`);
+    logger.debug('BATCH-CONFIG', `Concurrency: ${concurrency}`);
+    logger.debug('BATCH-CONFIG', `Slug: ${slug}`);
 
     try {
       await main(
@@ -137,15 +143,16 @@ export async function processList(customFilePath?: string): Promise<void> {
         force,
         name,
         description,
-        slug
+        slug,
+        itemDebug
       );
-      console.log(`Finished processing: ${url}\n`);
-    } catch (error) {
-      console.error(`Failed to process ${url}:`, error);
+      logger.success(`Finished batch item: ${url}`);
+    } catch (error: any) {
+      logger.error('BATCH', `Failed to process ${url}: ${error.message}`, error);
     }
   }
 
-  console.log('All pending items processed.');
+  logger.step('BATCH', 'All pending items processed.');
 }
 
 /**
@@ -162,31 +169,36 @@ USAGE:
 OPTIONS:
   --file=<path>, -f <path>    Specify custom YAML or JSON pending list file
                               (default: data/pending.yaml or data/pending.json)
+  --debug, -d                 Enable verbose step-by-step debug logging
   --help, -h                  Display this help message
 
 ENVIRONMENT VARIABLES:
+  DEBUG=1, DDOCS_DEBUG=1      Enable verbose debug logging
   HOST_ENV=remote             Routes outputs to /srv/knowledge/documentation/<slug>/
 
 EXAMPLES:
   # Process default data/pending.yaml list:
   npm run process-list
 
+  # Process with debug logging:
+  npm run process-list -- --debug
+
   # Process custom list file:
   npm run process-list -- --file=data/my_list.yaml
-
-  # Execute in remote environment:
-  HOST_ENV=remote npm run process-list
 `);
 }
 
 if (require.main === module) {
   const args = process.argv.slice(2);
   let customFile: string | undefined;
+  let debug = isDebugEnabled();
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--help' || args[i] === '-h') {
       printProcessListHelp();
       process.exit(0);
+    } else if (args[i] === '--debug' || args[i] === '-d' || args[i] === '--verbose') {
+      debug = true;
     } else if (args[i] === '--file' || args[i] === '-f') {
       customFile = args[++i];
     } else if (args[i].startsWith('--file=')) {
@@ -194,8 +206,12 @@ if (require.main === module) {
     }
   }
 
-  processList(customFile).catch((err) => {
-    console.error('Batch processing failed:', err.message);
+  if (debug) {
+    setDebugMode(true);
+  }
+
+  processList(customFile, debug).catch((err) => {
+    logger.error('PROCESS-LIST', `Batch processing failed: ${err.message}`, err);
     process.exit(1);
   });
 }

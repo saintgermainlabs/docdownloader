@@ -37,26 +37,71 @@ export interface VisitedRecord {
   contentHash?: string;
 }
 
+const GENERIC_SLUG_PREFIXES = new Set([
+  'docs',
+  'documentation',
+  'doc',
+  'guide',
+  'guides',
+  'manual',
+  'api',
+  'reference',
+  'en',
+  'zh',
+  'zh-hans',
+  'v1',
+  'v2',
+  'v3',
+  'latest',
+  'stable',
+]);
+
 /**
- * Extracts a default source slug from a starting URL.
+ * Extracts an intelligent default source slug from a starting URL.
  *
- * @param startUrl - The URL to extract from (e.g. `https://example.com/docs/v2`).
- * @returns The first path segment (e.g. `docs`) or hostname if at origin root.
+ * @param startUrl - The URL to extract from (e.g. `https://example.com/docs/v2` or `https://hermes-agent.nousresearch.com/docs/`).
+ * @returns Non-generic path segment, subdomain, or hostname.
  *
  * @example
  * ```typescript
- * extractDefaultSlug('https://developer.mozilla.org/en-US/docs/Web/API');
- * // Returns 'en-US'
+ * extractDefaultSlug('https://www.quartz-scheduler.org/documentation/quartz-2.5.x/');
+ * // Returns 'quartz-2.5.x'
+ *
+ * extractDefaultSlug('https://hermes-agent.nousresearch.com/docs/');
+ * // Returns 'hermes-agent'
  * ```
  */
 export function extractDefaultSlug(startUrl: string): string {
   try {
     const url = new URL(startUrl);
+    const host = url.hostname.replace(/^www\./, '');
     const parts = url.pathname.split('/').filter(Boolean);
-    if (parts.length > 0) {
-      return parts[0];
+
+    // Filter out generic path segments like 'documentation', 'docs', 'reference', etc.
+    const meaningfulParts = parts.filter(
+      (p) => !GENERIC_SLUG_PREFIXES.has(p.toLowerCase())
+    );
+    if (meaningfulParts.length > 0) {
+      return meaningfulParts[0];
     }
-    return url.hostname.replace(/^www\./, '');
+
+    // Check if subdomain is specific (e.g. 'hermes-agent' in hermes-agent.nousresearch.com)
+    const hostParts = host.split('.');
+    if (hostParts.length > 2 && !GENERIC_SLUG_PREFIXES.has(hostParts[0].toLowerCase())) {
+      return hostParts[0];
+    }
+
+    // If host starts with 'docs.' (e.g. docs.openclaw.ai), keep full hostname
+    if (hostParts[0] === 'docs' && hostParts.length >= 2) {
+      return host;
+    }
+
+    // Otherwise return first host part or full host
+    if (hostParts.length >= 2) {
+      return hostParts[0];
+    }
+
+    return host || 'default';
   } catch {
     return 'default';
   }

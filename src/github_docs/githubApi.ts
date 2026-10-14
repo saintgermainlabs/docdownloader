@@ -1,20 +1,53 @@
 import { GithubRepoUrlInfo, GithubFileEntry } from './types';
 
 /**
+ * Returns HTTP headers for GitHub API requests, including Bearer token if configured.
+ *
+ * @returns Headers dictionary.
+ */
+export function getGithubHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    'User-Agent': 'AI-Doc-Downloader/1.0',
+    'Accept': 'application/vnd.github.v3+json'
+  };
+
+  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  if (token) {
+    headers['Authorization'] = `Bearer ${token.trim()}`;
+  }
+
+  return headers;
+}
+
+/**
  * Parses a GitHub repository or sub-tree URL string into owner, repo, branch, and tree path components.
  *
- * @param urlStr - GitHub URL string (e.g. `https://github.com/owner/repo/tree/main/docs`).
- * @throws {Error} Thrown if `urlStr` is not a valid GitHub repository URL.
+ * Supports full HTTPS URLs, `github.com/owner/repo`, and `owner/repo` shorthand strings.
+ *
+ * @param urlStr - GitHub URL string (e.g. `https://github.com/owner/repo/tree/main/docs` or `owner/repo`).
+ * @throws {Error} Thrown if `urlStr` is not a valid GitHub repository identifier.
  * @returns Parsed {@link GithubRepoUrlInfo} object.
  *
  * @example
  * ```typescript
  * parseGithubUrl('https://github.com/aliaihub/awesome-hermes-usecases/tree/main/usecases');
+ * parseGithubUrl('kepano/obsidian-skills');
  * ```
  */
 export function parseGithubUrl(urlStr: string): GithubRepoUrlInfo {
   try {
-    const url = new URL(urlStr);
+    let cleanUrl = urlStr.trim();
+    if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+      if (cleanUrl.startsWith('github.com/')) {
+        cleanUrl = `https://${cleanUrl}`;
+      } else if (/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+/.test(cleanUrl)) {
+        cleanUrl = `https://github.com/${cleanUrl}`;
+      } else {
+        cleanUrl = `https://${cleanUrl}`;
+      }
+    }
+
+    const url = new URL(cleanUrl);
     const parts = url.pathname.split('/').filter(Boolean);
 
     if (parts.length < 2) {
@@ -45,11 +78,6 @@ export function parseGithubUrl(urlStr: string): GithubRepoUrlInfo {
   }
 }
 
-const DEFAULT_HEADERS = {
-  'User-Agent': 'AI-Doc-Downloader/1.0',
-  'Accept': 'application/vnd.github.v3+json'
-};
-
 /**
  * Fetches repository metadata (default branch and description) via the GitHub REST API.
  *
@@ -60,7 +88,7 @@ const DEFAULT_HEADERS = {
 export async function fetchRepoMetadata(owner: string, repo: string): Promise<{ defaultBranch: string; description: string }> {
   try {
     const res = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
-      headers: DEFAULT_HEADERS
+      headers: getGithubHeaders()
     });
     if (res.ok) {
       const data = (await res.json()) as any;
@@ -83,7 +111,7 @@ export async function fetchRepoMetadata(owner: string, repo: string): Promise<{ 
  * @returns Raw text content string.
  */
 export async function fetchFileText(url: string): Promise<string> {
-  const res = await fetch(url, { headers: DEFAULT_HEADERS });
+  const res = await fetch(url, { headers: getGithubHeaders() });
   if (!res.ok) {
     throw new Error(`Failed to fetch file from ${url} (status: ${res.status})`);
   }
@@ -133,7 +161,7 @@ export async function fetchTreeContentsRecursive(
   const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${treeSubPath}?ref=${branch}`;
 
   try {
-    const res = await fetch(apiUrl, { headers: DEFAULT_HEADERS });
+    const res = await fetch(apiUrl, { headers: getGithubHeaders() });
     if (!res.ok) {
       console.warn(`Could not list GitHub contents at ${apiUrl} (status: ${res.status})`);
       return results;
@@ -165,6 +193,48 @@ export async function fetchTreeContentsRecursive(
 }
 
 /**
+ * Queries the GitHub Git Trees API to recursively retrieve the entire repository tree in a single call.
+ *
+ * @param owner - Repository owner.
+ * @param repo - Repository name.
+ * @param branch - Git branch or commit ref.
+ * @returns Array of {@link GithubFileEntry} objects representing all files in the tree.
+ */
+export async function fetchGitTreeRecursive(
+  owner: string,
+  repo: string,
+  branch: string
+): Promise<GithubFileEntry[]> {
+  const apiUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
+  const results: GithubFileEntry[] = [];
+
+  try {
+    const res = await fetch(apiUrl, { headers: getGithubHeaders() });
+    if (res.ok) {
+      const data = (await res.json()) as any;
+      if (Array.isArray(data.tree)) {
+        for (const item of data.tree) {
+          if (item.type === 'blob') {
+            const fileName = item.path.split('/').pop() || item.path;
+            results.push({
+              name: fileName,
+              path: item.path,
+              downloadUrl: `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${item.path}`,
+              type: 'file'
+            });
+          }
+        }
+        return results;
+      }
+    }
+  } catch (err: any) {
+    console.warn(`Git Trees API request failed: ${err.message}`);
+  }
+
+  return results;
+}
+
+/**
  * Queries repository root contents to discover all top-level directory names.
  *
  * @param owner - Repository owner.
@@ -175,7 +245,7 @@ export async function fetchTreeContentsRecursive(
 export async function fetchRepoRootDirectories(owner: string, repo: string, branch: string): Promise<string[]> {
   const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents?ref=${branch}`;
   try {
-    const res = await fetch(apiUrl, { headers: DEFAULT_HEADERS });
+    const res = await fetch(apiUrl, { headers: getGithubHeaders() });
     if (res.ok) {
       const items = (await res.json()) as any[];
       if (Array.isArray(items)) {

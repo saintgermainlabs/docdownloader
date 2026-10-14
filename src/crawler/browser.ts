@@ -1,4 +1,5 @@
 import { chromium, Browser, Page } from 'playwright';
+import { logger } from '../utils/logger';
 
 /**
  * Manages Playwright headless browser instances and context lifecycle.
@@ -24,7 +25,19 @@ export class BrowserManager {
    * @returns A promise that resolves when Chromium launch completes.
    */
   async init(): Promise<void> {
-    this.browser = await chromium.launch({ headless: true });
+    logger.debug('BROWSER', 'Launching Playwright Chromium browser (headless: true)...');
+    const start = Date.now();
+    try {
+      this.browser = await chromium.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+      });
+      const elapsed = Date.now() - start;
+      logger.debug('BROWSER', `Chromium launched successfully in ${elapsed}ms (version: ${this.browser.version()})`);
+    } catch (err: any) {
+      logger.error('BROWSER', `Failed to launch Chromium browser: ${err.message}`, err);
+      throw err;
+    }
   }
 
   /**
@@ -35,7 +48,12 @@ export class BrowserManager {
    */
   async newPage(): Promise<Page> {
     if (!this.browser) throw new Error('Browser not initialized');
-    const context = await this.browser.newContext();
+    logger.debug('BROWSER', 'Creating new isolated browser context and page tab...');
+    const context = await this.browser.newContext({
+      userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      bypassCSP: true,
+      ignoreHTTPSErrors: true
+    });
     return context.newPage();
   }
 
@@ -46,8 +64,10 @@ export class BrowserManager {
    */
   async close(): Promise<void> {
     if (this.browser) {
+      logger.debug('BROWSER', 'Closing Chromium browser instance...');
       await this.browser.close();
       this.browser = null;
+      logger.debug('BROWSER', 'Chromium browser instance closed.');
     }
   }
 }

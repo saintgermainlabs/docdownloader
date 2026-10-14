@@ -1,0 +1,262 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# ddocs - Unified CLI for Documentation Downloading & Obsidian Ingestion
+# ==============================================================================
+set -euo pipefail
+
+REAL_SCRIPT="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "${REAL_SCRIPT}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+DEFAULT_VAULT="second-brain"
+VAULT_NAME="${OBSIDIAN_VAULT:-$DEFAULT_VAULT}"
+
+# Detect Debug Mode
+IS_DEBUG=false
+DEBUG_ENV="${DEBUG:-${DDOCS_DEBUG:-${DOCDOWNLOADER_DEBUG:-0}}}"
+if [[ "$DEBUG_ENV" == "1" || "$DEBUG_ENV" == "true" || "$DEBUG_ENV" == "yes" || "$DEBUG_ENV" == "*" ]]; then
+  IS_DEBUG=true
+fi
+
+# Check for --debug / -d / --verbose flags in arguments
+for arg in "$@"; do
+  if [[ "$arg" == "--debug" || "$arg" == "-d" || "$arg" == "--verbose" ]]; then
+    IS_DEBUG=true
+    export DEBUG=1
+    export DDOCS_DEBUG=1
+    break
+  fi
+done
+
+# Text formatting
+if [[ -t 1 ]]; then
+  BOLD="$(printf '\033[1m')"
+  GREEN="$(printf '\033[0;32m')"
+  BLUE="$(printf '\033[0;34m')"
+  YELLOW="$(printf '\033[0;33m')"
+  CYAN="$(printf '\033[0;36m')"
+  MAGENTA="$(printf '\033[0;35m')"
+  RED="$(printf '\033[0;31m')"
+  RESET="$(printf '\033[0m')"
+else
+  BOLD=""
+  GREEN=""
+  BLUE=""
+  YELLOW=""
+  CYAN=""
+  MAGENTA=""
+  RED=""
+  RESET=""
+fi
+
+log_debug() {
+  if [[ "$IS_DEBUG" == true ]]; then
+    echo -e "${MAGENTA}[DEBUG:ddocs-cli]${RESET} $*" >&2
+  fi
+}
+
+usage() {
+  cat <<EOF
+${BOLD}ddocs${RESET} - Unified Documentation Downloader & Obsidian Knowledge Integrator
+
+${BOLD}USAGE:${RESET}
+  ddocs <COMMAND> [OPTIONS]
+  ddocs <URL>                    # Quick download shortcut (delegates to docs_dl)
+
+${BOLD}CORE COMMANDS:${RESET}
+  ${BOLD}dl${RESET} <URL> [opts]          User-friendly downloader into Obsidian (${VAULT_NAME})
+  ${BOLD}skill${RESET} <URL> [opts]       Download agent skills into ${BOLD}skills/${RESET}
+  ${BOLD}clip${RESET} <URL> [opts]        Clip single page to ${BOLD}clippings/${RESET}
+  ${BOLD}crawl${RESET} <URL> <outputDir> [opts]  Crawl complete documentation into target directory
+  ${BOLD}gh${RESET} <URL> [opts]          Download GitHub repository docs into ${BOLD}Documents/${RESET}
+  ${BOLD}batch${RESET} [file.yaml]        Process batch URL list from YAML or JSON
+  ${BOLD}import${RESET} [opts]            Import an existing Markdown directory into SQLite index
+
+${BOLD}GLOBAL OPTIONS:${RESET}
+  ${BOLD}--debug, -d${RESET}            Enable verbose step-by-step debug logging
+  ${BOLD}vault${RESET} [info|open|ls]     Query or interact with Obsidian vaults
+  ${BOLD}build${RESET}                    Compile TypeScript source
+  ${BOLD}test${RESET}                     Run test suite
+  ${BOLD}help${RESET}, ${BOLD}-h${RESET}, ${BOLD}--help${RESET}         Show this help guide
+
+${BOLD}DEBUG MODE CONFIGURATION:${RESET}
+  Set ${BOLD}DEBUG = "1"${RESET} in ${BOLD}mise.toml${RESET} or run with ${BOLD}--debug${RESET} / ${BOLD}-d${RESET} to view all internal steps,
+  browser lifecycle events, HTTP responses, link discovery, and SQLite queries.
+
+${BOLD}EXAMPLES:${RESET}
+  # Quick download (smart auto-detection)
+  ddocs https://github.com/fastapi/fastapi
+
+  # Crawl documentation with debug output enabled
+  ddocs crawl https://docs.openclaw.ai/ ./output/openclaw --debug -c 5
+
+  # Single article clipping to Obsidian
+  ddocs clip https://openclaw.ai/blog/agent-architecture
+
+  # Check Obsidian vault connection
+  ddocs vault info
+EOF
+}
+
+ensure_build() {
+  if [[ ! -f "${PROJECT_ROOT}/dist/src/index.js" || ! -f "${PROJECT_ROOT}/dist/src/utils/logger.js" ]]; then
+    log_debug "Building TypeScript modules (dist is missing)..."
+    echo -e "${BLUE}ℹ Compiling TypeScript...${RESET}"
+    (cd "${PROJECT_ROOT}" && npm run build --silent)
+  fi
+}
+
+resolve_vault_path() {
+  local target_vault="$1"
+  local vault_path=""
+
+  if command -v obsidian >/dev/null 2>&1; then
+    vault_path="$(obsidian vault="${target_vault}" vault info=path 2>/dev/null | tr -d '\r\n' || true)"
+    log_debug "Obsidian CLI returned vault path: '${vault_path}'"
+  fi
+
+  if [[ -z "${vault_path}" || ! -d "${vault_path}" ]]; then
+    local candidate_paths=(
+      "/home/god/obsidian-vaults/agent/${target_vault}"
+      "/home/god/obsidian-vaults/${target_vault}"
+      "${HOME}/obsidian-vaults/agent/${target_vault}"
+      "${HOME}/obsidian-vaults/${target_vault}"
+      "${HOME}/Documents/Obsidian/${target_vault}"
+    )
+    for p in "${candidate_paths[@]}"; do
+      if [[ -d "$p" ]]; then
+        vault_path="$p"
+        log_debug "Found candidate vault path: '$p'"
+        break
+      fi
+    done
+  fi
+
+  if [[ -z "${vault_path}" || ! -d "${vault_path}" ]]; then
+    if [[ -d "/srv/knowledge" ]]; then
+      vault_path="/srv/knowledge"
+    else
+      vault_path="${PROJECT_ROOT}/output"
+    fi
+    log_debug "Using fallback vault/knowledge path: '${vault_path}'"
+  fi
+
+  echo "${vault_path}"
+}
+
+if [[ $# -eq 0 ]]; then
+  usage
+  exit 0
+fi
+
+CMD="$1"
+shift
+
+log_debug "Invoked ddocs command='$CMD' with args: $*"
+log_debug "PROJECT_ROOT=${PROJECT_ROOT}"
+
+# If first argument looks like a URL, delegate directly to docs_dl
+if [[ "$CMD" =~ ^https?:// ]]; then
+  log_debug "URL detected in first argument, delegating to docs_dl"
+  exec "${SCRIPT_DIR}/docs_dl" "$CMD" "$@"
+fi
+
+case "$CMD" in
+  dl|download)
+    log_debug "Delegating to docs_dl"
+    exec "${SCRIPT_DIR}/docs_dl" "$@"
+    ;;
+
+  skill|skills|download-skill)
+    ensure_build
+    VAULT_DIR="$(resolve_vault_path "${VAULT_NAME}")"
+    export KNOWLEDGE_ROOT="${VAULT_DIR}"
+    log_debug "Resolved KNOWLEDGE_ROOT=${KNOWLEDGE_ROOT}"
+    log_debug "Executing node ${PROJECT_ROOT}/dist/src/skills/index.js $*"
+    exec node "${PROJECT_ROOT}/dist/src/skills/index.js" "$@"
+    ;;
+
+  clip)
+    ensure_build
+    VAULT_DIR="$(resolve_vault_path "${VAULT_NAME}")"
+    export KNOWLEDGE_ROOT="${VAULT_DIR}"
+    log_debug "Resolved KNOWLEDGE_ROOT=${KNOWLEDGE_ROOT}"
+    log_debug "Executing node ${PROJECT_ROOT}/dist/src/scripts/clip.js $*"
+    exec node "${PROJECT_ROOT}/dist/src/scripts/clip.js" "$@"
+    ;;
+
+  crawl)
+    ensure_build
+    VAULT_DIR="$(resolve_vault_path "${VAULT_NAME}")"
+    export KNOWLEDGE_ROOT="${VAULT_DIR}"
+    log_debug "Resolved KNOWLEDGE_ROOT=${KNOWLEDGE_ROOT}"
+    log_debug "Executing node ${PROJECT_ROOT}/dist/src/index.js $*"
+    exec node "${PROJECT_ROOT}/dist/src/index.js" "$@"
+    ;;
+
+  gh|github|github-docs)
+    ensure_build
+    VAULT_DIR="$(resolve_vault_path "${VAULT_NAME}")"
+    export KNOWLEDGE_ROOT="${VAULT_DIR}"
+    log_debug "Resolved KNOWLEDGE_ROOT=${KNOWLEDGE_ROOT}"
+    log_debug "Executing node ${PROJECT_ROOT}/dist/src/github_docs/index.js $*"
+    exec node "${PROJECT_ROOT}/dist/src/github_docs/index.js" "$@"
+    ;;
+
+  batch|process-list)
+    ensure_build
+    VAULT_DIR="$(resolve_vault_path "${VAULT_NAME}")"
+    export KNOWLEDGE_ROOT="${VAULT_DIR}"
+    log_debug "Resolved KNOWLEDGE_ROOT=${KNOWLEDGE_ROOT}"
+    log_debug "Executing node ${PROJECT_ROOT}/dist/src/scripts/processList.js $*"
+    exec node "${PROJECT_ROOT}/dist/src/scripts/processList.js" "$@"
+    ;;
+
+  import|import-docs)
+    ensure_build
+    log_debug "Executing node ${PROJECT_ROOT}/dist/src/scripts/importDocs.js $*"
+    exec node "${PROJECT_ROOT}/dist/src/scripts/importDocs.js" "$@"
+    ;;
+
+  vault)
+    SUBCMD="${1:-info}"
+    VAULT_PATH="$(resolve_vault_path "${VAULT_NAME}")"
+    echo -e "${BOLD}${CYAN}Obsidian Vault Status:${RESET}"
+    echo -e "  ${BOLD}Vault Name:${RESET}  ${VAULT_NAME}"
+    echo -e "  ${BOLD}Vault Path:${RESET}  ${VAULT_PATH}"
+    if command -v obsidian >/dev/null 2>&1; then
+      echo -e "  ${BOLD}Obsidian CLI:${RESET} ${GREEN}Connected${RESET}"
+      if [[ "$SUBCMD" == "open" ]]; then
+        obsidian vault="${VAULT_NAME}" open
+      elif [[ "$SUBCMD" == "ls" || "$SUBCMD" == "list" ]]; then
+        obsidian vault="${VAULT_NAME}" folders
+      elif [[ "$SUBCMD" == "info" ]]; then
+        echo -e "  ${BOLD}Vault Info:${RESET}"
+        obsidian vault="${VAULT_NAME}" vault 2>/dev/null || true
+      fi
+    else
+      echo -e "  ${BOLD}Obsidian CLI:${RESET} ${YELLOW}Not found (using direct filesystem)${RESET}"
+    fi
+    ;;
+
+  build)
+    echo -e "${BLUE}Building docdownloader TypeScript...${RESET}"
+    (cd "${PROJECT_ROOT}" && npm run build)
+    ;;
+
+  test)
+    echo -e "${BLUE}Running test suite...${RESET}"
+    (cd "${PROJECT_ROOT}" && npm test)
+    ;;
+
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+
+  *)
+    echo -e "${RED}Error: Unknown command '$CMD'${RESET}\n" >&2
+    usage
+    exit 1
+    ;;
+esac

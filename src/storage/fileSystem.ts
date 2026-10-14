@@ -1,5 +1,6 @@
 import { writeFile, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
+import { logger } from '../utils/logger';
 
 /**
  * Result returned after saving a Markdown document to disk.
@@ -31,6 +32,7 @@ export class FileStorage {
     const fileName = this.urlToFilePath(url);
     const filePath = join(this.baseDir, fileName);
     
+    logger.debug('STORAGE', `Writing Markdown file to ${filePath} (${content.length} chars)`);
     await mkdir(dirname(filePath), { recursive: true });
     await writeFile(filePath, content, 'utf-8');
 

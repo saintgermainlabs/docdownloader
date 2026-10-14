@@ -5,6 +5,7 @@ import { BrowserManager } from '../crawler/browser';
 import { MarkdownConverter } from '../converter/markdown';
 import { VisitedDatabase, computeHash } from '../storage/database';
 import { resolveClippingDir } from '../storage/paths';
+import { logger, isDebugEnabled, setDebugMode } from '../utils/logger';
 
 /**
  * CLI options for the single-page clipping command.
@@ -24,6 +25,8 @@ export interface ClipCliOptions {
   noDb: boolean;
   /** Help requested */
   help: boolean;
+  /** Enable verbose debug logging */
+  debug: boolean;
 }
 
 /**
@@ -50,6 +53,7 @@ export function parseClipCliArgs(argv: string[]): ClipCliOptions {
   let dbPath = './docs.db';
   let noDb = false;
   let help = false;
+  let debug = isDebugEnabled();
 
   const positionals: string[] = [];
 
@@ -57,6 +61,11 @@ export function parseClipCliArgs(argv: string[]): ClipCliOptions {
     const arg = argv[i];
     if (arg === '-h' || arg === '--help') {
       help = true;
+    } else if (arg === '-d' || arg === '--debug' || arg === '--verbose') {
+      debug = true;
+    } else if (arg.startsWith('--debug=') || arg.startsWith('--verbose=')) {
+      const val = arg.split('=')[1]?.toLowerCase();
+      debug = val === 'true' || val === '1' || val === 'yes';
     } else if (arg === '--no-db') {
       noDb = true;
     } else if (arg === '--db' || arg === '--database') {
@@ -87,7 +96,7 @@ export function parseClipCliArgs(argv: string[]): ClipCliOptions {
     outputDir = positionals[1];
   }
 
-  return { url, outputDir, filename, title, dbPath, noDb, help };
+  return { url, outputDir, filename, title, dbPath, noDb, help, debug };
 }
 
 /**
@@ -165,30 +174,45 @@ export async function clipPage(options: {
   title?: string;
   dbPath?: string;
   noDb?: boolean;
+  debug?: boolean;
 }): Promise<ClipResult> {
+  if (options.debug !== undefined) {
+    setDebugMode(options.debug);
+  }
+
   const targetUrl = options.url.trim();
   if (!targetUrl) {
     throw new Error('URL is required');
   }
-  // Validate URL early
   const parsedUrl = new URL(targetUrl);
 
   const outDir = resolveClippingDir(options.outputDir);
+  logger.debug('CLIP', `Target URL: ${targetUrl}`);
+  logger.debug('CLIP', `Resolved clipping output dir: ${outDir}`);
+
   const browser = new BrowserManager();
   const converter = new MarkdownConverter();
 
+  logger.step('BROWSER', 'Initializing headless browser for clipping...');
   await browser.init();
   const page = await browser.newPage();
 
   try {
+    logger.debug('CLIP', `Navigating to ${parsedUrl.toString()} (timeout: 30s)...`);
+    const navStart = Date.now();
     await page.goto(parsedUrl.toString(), {
       waitUntil: 'domcontentloaded',
       timeout: 30000,
     });
+    logger.debug('CLIP', `Page DOM loaded in ${Date.now() - navStart}ms`);
+
     // Give SPAs a short settle window without failing on long-polling pages.
     await new Promise((resolve) => setTimeout(resolve, 1500));
 
     const pageTitle = (options.title?.trim() || (await page.title()) || parsedUrl.hostname).trim();
+    logger.debug('CLIP', `Resolved page title: "${pageTitle}"`);
+
+    logger.debug('CLIP', 'Extracting article/main content from DOM...');
     const contentHtml = await page.evaluate(() => {
       const selectors = [
         'article',
@@ -209,9 +233,12 @@ export async function clipPage(options: {
       }
       return document.body?.innerHTML || '';
     });
+    logger.debug('CLIP', `Extracted content HTML length: ${contentHtml.length} characters`);
 
+    logger.debug('CLIP', 'Converting HTML to Markdown...');
     const bodyMarkdown = converter.convert(contentHtml);
     const markdown = wrapClippingMarkdown(pageTitle, parsedUrl.toString(), bodyMarkdown);
+    logger.debug('CLIP', `Generated Markdown length: ${markdown.length} characters`);
 
     const fileName = (options.filename?.endsWith('.md')
       ? options.filename
@@ -222,10 +249,13 @@ export async function clipPage(options: {
 
     await mkdir(outDir, { recursive: true });
     const filePath = join(outDir, fileName);
+    logger.debug('CLIP', `Writing clipping note to disk: ${filePath}`);
     await writeFile(filePath, markdown, 'utf-8');
 
     if (!options.noDb) {
-      const db = new VisitedDatabase(options.dbPath || './docs.db');
+      const finalDbPath = options.dbPath || './docs.db';
+      logger.debug('CLIP', `Recording clipping in SQLite database: ${finalDbPath}`);
+      const db = new VisitedDatabase(finalDbPath);
       try {
         db.recordSource({
           slug: 'clippings',
@@ -244,6 +274,8 @@ export async function clipPage(options: {
         db.close();
       }
     }
+
+    logger.success(`Saved clipping note: ${filePath}`);
 
     return {
       url: parsedUrl.toString(),
@@ -280,14 +312,17 @@ OPTIONS:
   --title, -t <title>   Override page title (frontmatter + default filename)
   --db <path>           SQLite database path (default: ./docs.db)
   --no-db               Do not record the clip in docs.db
+  --debug, -d           Enable verbose step-by-step debug logging
   --help, -h            Show this help
 
 ENVIRONMENT:
+  DEBUG=1, DDOCS_DEBUG=1 Enable verbose debug logging
   HOST_ENV=remote       Use /srv/knowledge as the knowledge root
   KNOWLEDGE_ROOT=<path> Override knowledge root (clippings go to <path>/clippings)
 
 EXAMPLES:
   npm run clip -- "https://docs.openclaw.ai/plugins/building-plugins"
+  npm run clip -- "https://example.com/post" --debug
   HOST_ENV=remote npm run clip -- "https://example.com/post" --title "Example Post"
 `);
 }
@@ -300,6 +335,10 @@ async function runCli(): Promise<void> {
     process.exit(options.url || options.help ? 0 : 1);
   }
 
+  if (options.debug) {
+    setDebugMode(true);
+  }
+
   console.log(`Clipping: ${options.url}`);
   const result = await clipPage({
     url: options.url,
@@ -308,6 +347,7 @@ async function runCli(): Promise<void> {
     title: options.title,
     dbPath: options.dbPath,
     noDb: options.noDb,
+    debug: options.debug,
   });
   console.log(`Saved: ${result.filePath}`);
   console.log(`Title: ${result.title}`);
@@ -315,7 +355,7 @@ async function runCli(): Promise<void> {
 
 if (require.main === module) {
   runCli().catch((error) => {
-    console.error(error);
+    logger.error('CLIP', `Clipping failed: ${error.message}`, error);
     process.exit(1);
   });
 }

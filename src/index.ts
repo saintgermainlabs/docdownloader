@@ -5,7 +5,13 @@ import { normalizeUrl, isUrlInScope, CrawlScope } from './crawler/urlUtils';
 import { MarkdownConverter } from './converter/markdown';
 import { FileStorage } from './storage/fileSystem';
 import { VisitedDatabase, computeHash, extractDefaultSlug } from './storage/database';
-import { resolveOutputDir } from './storage/paths';
+import { resolveOutputDir, resolveSkillsDir, resolveClippingDir, resolveKnowledgeRoot } from './storage/paths';
+import { logger, isDebugEnabled, setDebugMode, colors } from './utils/logger';
+
+export { downloadSkill } from './skills/downloader';
+export { SkillDownloadOptions, SkillDownloadResult, SkillFileEntry, DownloadedSkillFile } from './skills/types';
+export { downloadGithubDocs } from './github_docs/downloader';
+export { resolveSkillsDir, resolveClippingDir, resolveKnowledgeRoot, resolveOutputDir };
 
 /**
  * Parsed CLI options for the primary `ai-doc-downloader` web crawler.
@@ -31,6 +37,8 @@ export interface CliOptions {
   slug?: string;
   /** Whether help was requested */
   help: boolean;
+  /** Enable verbose step-by-step debug logging */
+  debug: boolean;
 }
 
 /**
@@ -41,7 +49,7 @@ export interface CliOptions {
  */
 export function parseCliArgs(argv: string[]): CliOptions {
   let url = '';
-  let outputDir = './output';
+  let outputDir = '';
   let scope: CrawlScope = 'subfolder';
   let concurrency = 1;
   let dbPath: string | undefined;
@@ -50,6 +58,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
   let description: string | undefined;
   let slug: string | undefined;
   let help = false;
+  let debug = isDebugEnabled();
 
   const positionals: string[] = [];
 
@@ -59,6 +68,15 @@ export function parseCliArgs(argv: string[]): CliOptions {
       help = true;
     } else if (arg === '-f' || arg === '--force') {
       force = true;
+    } else if (arg === '-d' || arg === '--debug' || arg === '--verbose') {
+      debug = true;
+    } else if (arg.startsWith('--debug=') || arg.startsWith('--verbose=')) {
+      const val = arg.split('=')[1]?.toLowerCase();
+      debug = val === 'true' || val === '1' || val === 'yes';
+    } else if (arg === '--out' || arg === '--output' || arg === '-o') {
+      outputDir = argv[++i];
+    } else if (arg.startsWith('--out=') || arg.startsWith('--output=')) {
+      outputDir = arg.split('=')[1];
     } else if (arg === '--db' || arg === '--database') {
       dbPath = argv[++i];
     } else if (arg.startsWith('--db=') || arg.startsWith('--database=')) {
@@ -112,30 +130,25 @@ export function parseCliArgs(argv: string[]): CliOptions {
     url = positionals[0];
   }
   if (positionals.length > 1) {
-    const second = positionals[1].toLowerCase();
-    if (second === 'subfolder' || second === 'website' || second === 'site' || second === 'all' || second === 'sub') {
-      scope = second === 'website' || second === 'site' || second === 'all' ? 'website' : 'subfolder';
-    } else {
-      outputDir = positionals[1];
-    }
+    outputDir = positionals[1];
   }
   if (positionals.length > 2) {
     const third = positionals[2].toLowerCase();
-    if (third === 'subfolder' || third === 'website' || third === 'site' || third === 'all' || third === 'sub') {
-      scope = third === 'website' || third === 'site' || third === 'all' ? 'website' : 'subfolder';
-    } else if (outputDir === './output') {
-      outputDir = positionals[2];
+    if (third === 'website' || third === 'site' || third === 'all' || third === 'whole') {
+      scope = 'website';
+    } else if (third === 'subfolder' || third === 'sub' || third === 'subpath') {
+      scope = 'subfolder';
     }
   }
 
-  return { url, outputDir, scope, concurrency, dbPath, force, name, description, slug, help };
+  return { url, outputDir, scope, concurrency, dbPath, force, name, description, slug, help, debug };
 }
 
 /**
  * Main application entrypoint for executing web documentation crawls.
  *
  * @param startUrl - Initial URL to start crawling from.
- * @param outputDir - Destination directory path (default: `./output`).
+ * @param outputDir - Destination directory path (mandatory).
  * @param scope - Crawl scope constraint (`'subfolder'` or `'website'`).
  * @param concurrency - Number of parallel Playwright browser workers.
  * @param dbPath - SQLite database tracking path (default: `./docs.db`).
@@ -143,19 +156,47 @@ export function parseCliArgs(argv: string[]): CliOptions {
  * @param name - Human-readable documentation source name.
  * @param description - Summary description of the documentation source.
  * @param slug - Source slug key.
+ * @param debug - Enable verbose step-by-step debug logging.
  */
 export async function main(
   startUrl: string,
-  outputDir: string = './output',
+  outputDir: string,
   scope: CrawlScope = 'subfolder',
   concurrency: number = 1,
   dbPath?: string,
   force: boolean = false,
   name?: string,
   description?: string,
-  slug?: string
+  slug?: string,
+  debug?: boolean
 ): Promise<void> {
+  if (!startUrl) {
+    throw new Error('Missing required positional argument: startUrl');
+  }
+  if (!outputDir) {
+    throw new Error('Missing required positional argument: outputDir');
+  }
+
+  if (debug !== undefined) {
+    setDebugMode(debug);
+  }
+
+  const startTime = Date.now();
   const finalDbPath = dbPath || './docs.db';
+
+  if (isDebugEnabled()) {
+    logger.banner('ddocs crawl: Web Documentation Crawler [DEBUG ACTIVE]');
+    logger.debug('CONFIG', `Seed URL: ${startUrl}`);
+    logger.debug('CONFIG', `Scope: ${scope}`);
+    logger.debug('CONFIG', `Concurrency: ${concurrency}`);
+    logger.debug('CONFIG', `Output Dir: ${outputDir}`);
+    logger.debug('CONFIG', `Database: ${finalDbPath}`);
+    logger.debug('CONFIG', `Force re-crawl: ${force ? 'YES' : 'NO'}`);
+    logger.debug('CONFIG', `Node: ${process.version} | PID: ${process.pid} | Platform: ${process.platform}`);
+    logger.debug('CONFIG', `HOST_ENV: ${process.env.HOST_ENV || '(unset)'} | KNOWLEDGE_ROOT: ${process.env.KNOWLEDGE_ROOT || '(unset)'}`);
+  }
+
+  logger.step('DATABASE', `Connecting to SQLite index: ${finalDbPath}`);
   const db = new VisitedDatabase(finalDbPath);
 
   const sourceSlug = slug || extractDefaultSlug(startUrl);
@@ -163,6 +204,7 @@ export async function main(
   const sourceDesc = description || '';
   const finalOutputDir = resolveOutputDir(sourceSlug, 'repo', 'awesome', outputDir);
 
+  logger.debug('DATABASE', `Registering source metadata: slug="${sourceSlug}", name="${sourceName}"`);
   db.recordSource({
     slug: sourceSlug,
     name: sourceName,
@@ -170,52 +212,115 @@ export async function main(
     description: sourceDesc
   });
 
+  const existingVisited = db.getAllVisited(sourceSlug);
+  logger.debug('DATABASE', `Source "${sourceSlug}" has ${existingVisited.length} previously indexed page(s)`);
+  logger.debug('STORAGE', `Final target output directory: ${finalOutputDir}`);
+
+  logger.step('BROWSER', 'Launching headless Chromium browser instance...');
   const browser = new BrowserManager();
   const queue = new CrawlerQueue({ db, force });
   const converter = new MarkdownConverter();
   const storage = new FileStorage(finalOutputDir);
 
   await browser.init();
+
   const initialUrl = normalizeUrl(startUrl, startUrl) || startUrl;
   queue.add(initialUrl);
+  logger.debug('QUEUE', `Enqueued initial seed URL: ${initialUrl} (Queue length: ${queue.size})`);
 
   let activeWorkers = 0;
+  let totalProcessed = 0;
+  let totalDownloaded = 0;
+  let totalSkipped = 0;
+  let totalErrors = 0;
+
+  const workerCount = Math.max(1, concurrency);
+  logger.step('WORKERS', `Spawning ${workerCount} concurrent crawler worker(s)...`);
 
   try {
-    async function worker() {
+    async function worker(workerId: number) {
+      logger.debug('WORKER', `Worker #${workerId} ready and listening for queue tasks`);
       while (true) {
         const url = queue.next();
         if (!url) {
           if (activeWorkers === 0) {
+            logger.debug('WORKER', `Worker #${workerId} queue empty and 0 active workers. Exiting.`);
             break;
           }
-          await new Promise((r) => setTimeout(r, 50));
+          await new Promise((r) => setTimeout(r, 100));
           if (queue.isEmpty() && activeWorkers === 0) {
+            logger.debug('WORKER', `Worker #${workerId} confirmed queue empty. Exiting.`);
             break;
           }
           continue;
         }
 
         activeWorkers++;
+        totalProcessed++;
+        const workerStartTime = Date.now();
         const isVisited = !force && db.hasVisited(url);
+
         if (isVisited) {
-          console.log(`Skipping download (already in database): ${url}`);
+          totalSkipped++;
+          if (isDebugEnabled()) {
+            logger.worker(workerId, `[SKIP-DB] Already in database: ${url}`);
+          } else {
+            console.log(`Skipping download (already in database): ${url}`);
+          }
         } else {
-          console.log(`Processing [active: ${activeWorkers}]: ${url}`);
+          totalDownloaded++;
+          if (isDebugEnabled()) {
+            logger.worker(workerId, `[PROCESS] Starting download: ${url} (Queue remaining: ${queue.size})`);
+          } else {
+            console.log(`Processing [active: ${activeWorkers}]: ${url}`);
+          }
         }
 
-        const page = await browser.newPage();
+        let page = null;
 
         try {
-          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+          logger.debug(`W#${workerId}`, `Creating browser page for ${url}`);
+          page = await browser.newPage();
+
+          if (isDebugEnabled()) {
+            page.on('console', (msg) => {
+              const type = msg.type();
+              if (type === 'error' || type === 'warning') {
+                logger.debug('PAGE-CONSOLE', `[${type}] ${msg.text()}`);
+              }
+            });
+            page.on('pageerror', (err) => {
+              logger.debug('PAGE-ERROR', `${err.message}`);
+            });
+            page.on('requestfailed', (req) => {
+              logger.debug('NET-FAIL', `${req.url()} (${req.failure()?.errorText || 'failed'})`);
+            });
+          }
+
+          logger.debug(`W#${workerId}`, `Navigating to ${url} (timeout: 20000ms, waitUntil: domcontentloaded)...`);
+          const navStart = Date.now();
+          const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+          const navTime = Date.now() - navStart;
+          const status = response ? response.status() : 'cached/unknown';
+          logger.debug(`W#${workerId}`, `Page loaded in ${navTime}ms (HTTP ${status}) -> ${page.url()}`);
+
+          // Settle window for dynamic SPA components
+          await new Promise((r) => setTimeout(r, 200));
 
           if (!isVisited) {
+            logger.debug(`W#${workerId}`, `Extracting DOM content from ${url}...`);
             const content = await page.content();
             const pageTitle = (await page.title()) || '';
-            const markdown = converter.convert(content);
+            logger.debug(`W#${workerId}`, `Extracted ${content.length} chars of HTML. Title: "${pageTitle}"`);
 
+            logger.debug(`W#${workerId}`, `Converting HTML to Markdown...`);
+            const markdown = converter.convert(content);
+            logger.debug(`W#${workerId}`, `Converted to ${markdown.length} chars of Markdown`);
+
+            logger.debug(`W#${workerId}`, `Saving Markdown file to storage...`);
             const saved = await storage.saveMarkdown(new URL(url), markdown);
             const hash = computeHash(markdown);
+            logger.debug(`W#${workerId}`, `Saved file: ${saved.relativeFilePath} (SHA-256: ${hash.substring(0, 12)}...)`);
 
             db.recordVisited({
               url,
@@ -224,30 +329,76 @@ export async function main(
               title: pageTitle,
               contentHash: hash
             });
+            logger.debug(`W#${workerId}`, `Recorded visited entry in SQLite docs.db`);
           }
 
+          logger.debug(`W#${workerId}`, `Discovering hyperlinks from page anchor elements...`);
           const links = await page.$$eval('a', (as) => as.map((a) => a.href));
+          logger.debug(`W#${workerId}`, `Found ${links.length} raw anchor link(s) on ${url}`);
+
+          let inScopeCount = 0;
+          let newlyQueuedCount = 0;
+
           for (const link of links) {
             const normalized = normalizeUrl(url, link);
-            if (normalized && isUrlInScope(normalized, startUrl, scope)) {
-              queue.add(normalized);
+            if (!normalized) {
+              logger.debug(`W#${workerId}`, `[LINK-INVALID] Could not parse: "${link}"`);
+              continue;
+            }
+
+            const inScope = isUrlInScope(normalized, startUrl, scope);
+            if (inScope) {
+              inScopeCount++;
+              const added = queue.add(normalized);
+              if (added) {
+                newlyQueuedCount++;
+                logger.debug(`W#${workerId}`, `[LINK-IN-SCOPE:NEW] ${normalized}`);
+              } else {
+                logger.debug(`W#${workerId}`, `[LINK-IN-SCOPE:SEEN] ${normalized}`);
+              }
+            } else {
+              logger.debug(`W#${workerId}`, `[LINK-OUT-OF-SCOPE] ${normalized} (Scope: ${scope})`);
             }
           }
-        } catch (error) {
-          console.error(`Error processing ${url}:`, error);
+
+          logger.debug(
+            `W#${workerId}`,
+            `Link discovery for ${url}: ${links.length} total, ${inScopeCount} in-scope, ${newlyQueuedCount} newly enqueued`
+          );
+
+          const elapsed = Date.now() - workerStartTime;
+          logger.debug(`W#${workerId}`, `Finished ${url} in ${elapsed}ms (Queue remaining: ${queue.size})`);
+        } catch (error: any) {
+          totalErrors++;
+          logger.error(`WORKER #${workerId}`, `Failed processing ${url}: ${error.message}`, error);
         } finally {
-          await page.close();
+          if (page) {
+            try {
+              await page.close();
+            } catch {
+              // ignore page close errors
+            }
+          }
           activeWorkers--;
         }
       }
+      logger.debug('WORKER', `Worker #${workerId} finished`);
     }
 
-    const workerCount = Math.max(1, concurrency);
-    const workers = Array.from({ length: workerCount }, () => worker());
+    const workers = Array.from({ length: workerCount }, (_, i) => worker(i + 1));
     await Promise.all(workers);
   } finally {
+    logger.step('CLEANUP', 'Closing browser instance and SQLite database...');
     await browser.close();
     db.close();
+
+    const elapsedSeconds = ((Date.now() - startTime) / 1000).toFixed(2);
+    logger.step('COMPLETE', `Documentation crawl finished in ${elapsedSeconds}s`);
+    logger.info(
+      `Summary: ${totalProcessed} total URLs processed (${totalDownloaded} downloaded, ${totalSkipped} skipped), ${totalErrors} error(s)`
+    );
+    logger.info(`Output Directory: ${finalOutputDir}`);
+    logger.info(`SQLite Database:  ${finalDbPath}`);
   }
 }
 
@@ -259,13 +410,14 @@ export function printMainCliHelp(): void {
 ai-doc-downloader - TypeScript Web Documentation Harvester
 
 USAGE:
-  npm start -- <url> [outputDir] [scope] [options]
-  node dist/src/index.js <url> [outputDir] [scope] [options]
+  ddocs crawl <url> <outputDir> [scope] [options]
+  npm start -- <url> <outputDir> [scope] [options]
+  node dist/src/index.js <url> <outputDir> [scope] [options]
 
 ARGUMENTS:
-  <url>                         Base seed URL to crawl (e.g. https://docs.openclaw.ai/)
-  [outputDir]                   Directory to save Markdown files (default: ./output)
-  [scope]                       Crawl scope: 'subfolder' or 'website' (default: subfolder)
+  <url>                         (Mandatory) Base seed URL to crawl (e.g. https://docs.openclaw.ai/)
+  <outputDir>                   (Mandatory) Directory to save Markdown files (e.g. ./output or Documents/)
+  [scope]                       (Optional) Crawl scope: 'subfolder' or 'website' (default: subfolder)
 
 OPTIONS:
   --concurrency, -c <N>         Number of parallel Playwright workers (default: 1)
@@ -277,38 +429,56 @@ OPTIONS:
   --slug <slug>                 Custom source slug key (default: first URL path segment)
   --db <path>                   Path to SQLite database file (default: ./docs.db)
   --force, -f                   Force re-downloading previously visited pages
+  --debug, -d, --verbose        Enable verbose step-by-step debug logging
   --help, -h                    Display this help message
 
 ENVIRONMENT VARIABLES:
+  DEBUG=1, DDOCS_DEBUG=1        Enable verbose debug logging across all steps
   HOST_ENV=remote               Routes output directory to /srv/knowledge/documentation/<slug>/
 
 EXAMPLES:
   # Crawl subfolder documentation with 5 parallel workers:
-  npm start -- https://docs.openclaw.ai/ -c 5
+  ddocs crawl https://docs.openclaw.ai/ ./output -c 5
+
+  # Crawl with verbose debug mode enabled:
+  ddocs crawl https://docs.openclaw.ai/ ./output --debug -c 5
 
   # Crawl with custom metadata and slug:
-  npm start -- https://docs.openclaw.ai/ --name "OpenClaw Docs" --slug "openclaw" -c 5
+  ddocs crawl https://docs.openclaw.ai/ ./output --name "OpenClaw Docs" --slug "openclaw" -c 5
 
   # Remote environment execution:
-  HOST_ENV=remote npm start -- https://tailscale.com/docs/ -c 5
+  HOST_ENV=remote npm start -- https://tailscale.com/docs/ ./output -c 5
 `);
 }
 
 if (require.main === module) {
   const options = parseCliArgs(process.argv.slice(2));
 
-  if (options.help || !options.url) {
+  if (options.help || !options.url || !options.outputDir) {
     printMainCliHelp();
-    if (!options.url && !options.help) {
+    if ((!options.url || !options.outputDir) && !options.help) {
+      if (!options.url) {
+        logger.error('CLI', 'Missing mandatory <url> positional argument.');
+      }
+      if (!options.outputDir) {
+        logger.error('CLI', 'Missing mandatory <outputDir> positional argument.');
+      }
       process.exit(1);
     }
     process.exit(0);
+  }
+
+  if (options.debug) {
+    setDebugMode(true);
   }
 
   console.log(`Starting crawl: ${options.url}`);
   console.log(`Output directory: ${options.outputDir}`);
   console.log(`Crawl scope: ${options.scope}`);
   console.log(`Concurrency: ${options.concurrency}`);
+  if (options.debug) {
+    console.log(`Debug mode: ENABLED`);
+  }
 
   main(
     options.url,
@@ -319,6 +489,10 @@ if (require.main === module) {
     options.force,
     options.name,
     options.description,
-    options.slug
-  ).catch(console.error);
+    options.slug,
+    options.debug
+  ).catch((err) => {
+    logger.error('MAIN', `Fatal error during crawl execution: ${err.message}`, err);
+    process.exit(1);
+  });
 }

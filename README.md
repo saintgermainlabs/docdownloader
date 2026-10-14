@@ -56,7 +56,29 @@ npm start -- "https://docs.openclaw.ai/" --name "OpenClaw Docs" --description "O
 
 # Force re-downloading previously visited pages
 npm start -- "https://docs.openclaw.ai/" --force
+
+# Enable verbose step-by-step debug logging
+npm start -- "https://docs.openclaw.ai/" --debug -c 5
 ```
+
+### 1.1 Debug Mode Configuration (`mise.toml`)
+
+You can enable verbose step-by-step debug logging by setting `DEBUG = "1"` or `DDOCS_DEBUG = "1"` in `mise.toml`:
+
+```toml
+[env]
+DEBUG = "1"
+DDOCS_DEBUG = "1"
+```
+
+When enabled, the crawler prints detailed timestamped information for:
+- Environment and configuration resolution (vault path, database file, output folders)
+- Browser lifecycle (Chromium launch timing, process ID, version, context creation)
+- Network and page lifecycle (HTTP status, DOM load time, console messages, network failures)
+- HTML-to-Markdown conversion metrics and saved file paths
+- Hyperlink discovery (evaluated links, in-scope vs out-of-scope reasons, queue state)
+- Worker pool metrics and execution duration per page
+
 
 ### 2. Single-page Clipping (`npm run clip`)
 
