@@ -21,7 +21,39 @@ A powerful TypeScript-based web crawler and documentation harvester that downloa
 
 ---
 
-## Installation
+## Install / Update / Uninstall
+
+> Remote: currently `github.com/saintgermainlabs/docdownloader`. **TODO(remote):** move to Gitea `saintgermainlabs/doc-dl` and update the URLs below + `DOC_DL_REPO` default in `install.sh`.
+
+### Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/saintgermainlabs/docdownloader/main/install.sh | bash
+```
+
+Requires `git`, `node >= 18`, `npm` (no sudo, no Python). Installs the repo to
+`${XDG_DATA_HOME:-$HOME/.local/share}/doc-dl`, runs `npm ci && npm run build`, installs Playwright
+chromium, and writes launchers (`docs_dl`, `ddocs`, `docdownloader-clip`, `docdownloader-skill`) into `~/.local/bin`.
+
+Overrides: `DOC_DL_HOME`, `DOC_DL_BIN`, `DOC_DL_REPO` (URL or local path), `DOC_DL_REF` (branch/tag/commit), `DOC_DL_SKIP_BROWSERS=1`.
+
+### Update
+
+Re-run the same one-liner (idempotent: fetches `DOC_DL_REF`, rebuilds, refreshes launchers).
+
+### Uninstall
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/saintgermainlabs/docdownloader/main/install.sh | bash -s -- --uninstall
+```
+
+Removes only launchers it created (marked `# doc-dl-launcher`) and the install dir.
+
+### Helper: second-brain folder docs generator
+
+`scripts/generate-folder-docs.py` regenerates README.md + AGENTS.md for each second-brain folder into a staging dir (edit `SRC`/`DST` at the top).
+
+## Installation (development)
 
 ```bash
 # Clone the repository
