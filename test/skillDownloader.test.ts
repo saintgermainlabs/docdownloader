@@ -45,7 +45,7 @@ describe('Skill Downloader Module', () => {
   });
 
   describe('parseSkillCliArgs', () => {
-    test('parses full URL and default options', () => {
+    test('parses full URL and default options', async () => {
       const args = parseSkillCliArgs(['https://github.com/kepano/obsidian-skills']);
       assert.strictEqual(args.repoUrl, 'https://github.com/kepano/obsidian-skills');
       assert.strictEqual(args.force, false);
@@ -54,7 +54,7 @@ describe('Skill Downloader Module', () => {
       assert.strictEqual(args.help, false);
     });
 
-    test('parses CLI flags correctly', () => {
+    test('parses CLI flags correctly', async () => {
       const args = parseSkillCliArgs([
         'https://github.com/kepano/obsidian-skills',
         '--skill=json-canvas',
@@ -80,7 +80,7 @@ describe('Skill Downloader Module', () => {
       assert.strictEqual(args.dbPath, '/tmp/custom.db');
     });
 
-    test('handles shorthand flags and positional output directory', () => {
+    test('handles shorthand flags and positional output directory', async () => {
       const args = parseSkillCliArgs([
         'kepano/obsidian-skills',
         '/tmp/positional-skills',
@@ -98,7 +98,7 @@ describe('Skill Downloader Module', () => {
   });
 
   describe('extractSkillTitle', () => {
-    test('extracts title from YAML frontmatter title property', () => {
+    test('extracts title from YAML frontmatter title property', async () => {
       const markdown = `---
 title: "JSON Canvas Visualization"
 description: Build interactive diagrams
@@ -108,7 +108,7 @@ description: Build interactive diagrams
       assert.strictEqual(extractSkillTitle(markdown, 'SKILL.md'), 'JSON Canvas Visualization');
     });
 
-    test('extracts name from YAML frontmatter name property', () => {
+    test('extracts name from YAML frontmatter name property', async () => {
       const markdown = `---
 name: defuddle
 description: Extract clean web content
@@ -118,12 +118,12 @@ Some body text without H1 header
       assert.strictEqual(extractSkillTitle(markdown, 'SKILL.md'), 'defuddle');
     });
 
-    test('extracts title from Markdown H1 header when no frontmatter', () => {
+    test('extracts title from Markdown H1 header when no frontmatter', async () => {
       const markdown = `# Obsidian Markdown Syntax Guide\n\nDetailed reference for links and callouts.`;
       assert.strictEqual(extractSkillTitle(markdown, 'SKILL.md'), 'Obsidian Markdown Syntax Guide');
     });
 
-    test('falls back to filename basename when no title or H1 found', () => {
+    test('falls back to filename basename when no title or H1 found', async () => {
       const plain = `A basic document without headers or frontmatter.`;
       assert.strictEqual(extractSkillTitle(plain, 'CALLOUTS.md'), 'CALLOUTS');
     });
@@ -147,7 +147,7 @@ Some body text without H1 header
       { name: 'PROPERTIES.md', path: 'skills/obsidian-markdown/references/PROPERTIES.md', downloadUrl: 'http://example.com/14', type: 'file' },
     ];
 
-    test('discovers all skills in multi-skill repository with skills/ directory', () => {
+    test('discovers all skills in multi-skill repository with skills/ directory', async () => {
       const result = discoverSkillFiles(mockObsidianSkillsRepoFiles, {
         repoName: 'obsidian-skills'
       });
@@ -174,7 +174,7 @@ Some body text without H1 header
       assert.strictEqual(jsonCanvasRef.skillName, 'json-canvas');
     });
 
-    test('filters to specific skill when skillName option is supplied', () => {
+    test('filters to specific skill when skillName option is supplied', async () => {
       const result = discoverSkillFiles(mockObsidianSkillsRepoFiles, {
         repoName: 'obsidian-skills',
         skillName: 'json-canvas'
@@ -187,7 +187,7 @@ Some body text without H1 header
       assert.ok(result.files.some((f) => f.targetRelativePath === 'json-canvas/references/EXAMPLES.md'));
     });
 
-    test('maps specific sub-tree path correctly', () => {
+    test('maps specific sub-tree path correctly', async () => {
       const result = discoverSkillFiles(mockObsidianSkillsRepoFiles, {
         repoName: 'obsidian-skills',
         tree: 'skills/obsidian-markdown'
@@ -199,7 +199,7 @@ Some body text without H1 header
       assert.ok(result.files.some((f) => f.targetRelativePath === 'obsidian-markdown/references/CALLOUTS.md'));
     });
 
-    test('handles single-skill repository where SKILL.md is at root', () => {
+    test('handles single-skill repository where SKILL.md is at root', async () => {
       const mockSingleSkillFiles: GithubFileEntry[] = [
         { name: 'SKILL.md', path: 'SKILL.md', downloadUrl: 'http://example.com/s1', type: 'file' },
         { name: 'helper.py', path: 'scripts/helper.py', downloadUrl: 'http://example.com/s2', type: 'file' },
@@ -218,11 +218,11 @@ Some body text without H1 header
   });
 
   describe('Storage & Database Integration', () => {
-    test('records downloaded skills into SQLite index correctly', () => {
+    test('records downloaded skills into SQLite index correctly', async () => {
       const db = new VisitedDatabase(tempDbPath);
       const sourceSlug = 'obsidian-skills';
 
-      db.recordSource({
+      await db.recordSource({
         slug: sourceSlug,
         name: 'Obsidian Agent Skills',
         startUrl: 'https://github.com/kepano/obsidian-skills',
@@ -247,7 +247,7 @@ Some body text without H1 header
         mkdirSync(join(dest, '..'), { recursive: true });
         writeFileSync(dest, item.content, 'utf-8');
 
-        db.recordVisited({
+        await db.recordVisited({
           url: item.url,
           sourceSlug,
           relativeFilePath: dest,
@@ -256,19 +256,19 @@ Some body text without H1 header
         });
       }
 
-      const source = db.getSource(sourceSlug);
+      const source = await db.getSource(sourceSlug);
       assert.ok(source);
       assert.strictEqual(source.name, 'Obsidian Agent Skills');
 
-      const visited = db.getAllVisited(sourceSlug);
+      const visited = await db.getAllVisited(sourceSlug);
       assert.strictEqual(visited.length, 2);
       assert.strictEqual(visited[0].title, 'defuddle');
       assert.strictEqual(visited[1].title, 'json-canvas');
 
-      assert.strictEqual(db.hasVisited('https://github.com/kepano/obsidian-skills/blob/main/skills/defuddle/SKILL.md'), true);
-      assert.strictEqual(db.hasVisited('https://github.com/kepano/obsidian-skills/blob/main/skills/nonexistent.md'), false);
+      assert.strictEqual(await db.hasVisited('https://github.com/kepano/obsidian-skills/blob/main/skills/defuddle/SKILL.md'), true);
+      assert.strictEqual(await db.hasVisited('https://github.com/kepano/obsidian-skills/blob/main/skills/nonexistent.md'), false);
 
-      db.close();
+      await db.close();
     });
   });
 });

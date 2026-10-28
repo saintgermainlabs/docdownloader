@@ -339,7 +339,7 @@ export async function downloadSkill(options: SkillDownloadOptions): Promise<Skil
   if (!options.noDb) {
     logger.step('DATABASE', `Recording source metadata in SQLite: ${dbPath}`);
     db = new VisitedDatabase(dbPath);
-    db.recordSource({
+    await db.recordSource({
       slug: sourceSlug,
       name: sourceName,
       startUrl: options.repoUrl,
@@ -367,8 +367,8 @@ export async function downloadSkill(options: SkillDownloadOptions): Promise<Skil
 
       // Check if file already exists with same content (unless --force)
       if (!options.force && existsSync(destPath)) {
-        if (db && db.hasVisited(fileUrl)) {
-          const record = db.getRecord(fileUrl);
+        if (db && (await db.hasVisited(fileUrl))) {
+          const record = await db.getRecord(fileUrl);
           if (record && record.contentHash === hash) {
             totalSkipped++;
             logger.debug('SKIP', `File already up to date: ${relativeFilePath}`);
@@ -391,7 +391,7 @@ export async function downloadSkill(options: SkillDownloadOptions): Promise<Skil
       writeFileSync(destPath, content, 'utf-8');
 
       if (db) {
-        db.recordVisited({
+        await db.recordVisited({
           url: fileUrl,
           sourceSlug,
           relativeFilePath,
@@ -418,7 +418,7 @@ export async function downloadSkill(options: SkillDownloadOptions): Promise<Skil
   }
 
   if (db) {
-    db.close();
+    await db.close();
   }
 
   const elapsedMs = Date.now() - startTime;

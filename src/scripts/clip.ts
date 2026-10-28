@@ -257,13 +257,13 @@ export async function clipPage(options: {
       logger.debug('CLIP', `Recording clipping in SQLite database: ${finalDbPath}`);
       const db = new VisitedDatabase(finalDbPath);
       try {
-        db.recordSource({
+        await db.recordSource({
           slug: 'clippings',
           name: 'Clippings',
           startUrl: 'clippings://local',
           description: 'Single-page web clippings',
         });
-        db.recordVisited({
+        await db.recordVisited({
           url: parsedUrl.toString(),
           sourceSlug: 'clippings',
           relativeFilePath: filePath,
@@ -271,7 +271,7 @@ export async function clipPage(options: {
           contentHash: computeHash(markdown),
         });
       } finally {
-        db.close();
+        await db.close();
       }
     }
 

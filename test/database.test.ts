@@ -5,12 +5,12 @@ import { join } from 'node:path';
 import { VisitedDatabase, computeHash, extractDefaultSlug } from '../src/storage/database';
 
 describe('extractDefaultSlug', () => {
-  test('extracts meaningful non-generic path segment as slug', () => {
+  test('extracts meaningful non-generic path segment as slug', async () => {
     assert.strictEqual(extractDefaultSlug('https://www.quartz-scheduler.org/documentation/quartz-2.5.x/'), 'quartz-2.5.x');
     assert.strictEqual(extractDefaultSlug('https://react.dev/reference/react'), 'react');
   });
 
-  test('falls back to hostname or subdomain for root/generic paths', () => {
+  test('falls back to hostname or subdomain for root/generic paths', async () => {
     assert.strictEqual(extractDefaultSlug('https://www.example.com/'), 'example');
     assert.strictEqual(extractDefaultSlug('https://hermes-agent.nousresearch.com/docs/'), 'hermes-agent');
   });
@@ -25,17 +25,17 @@ describe('VisitedDatabase', () => {
     }
   });
 
-  test('records source and visited pages with sourceSlug', () => {
+  test('records source and visited pages with sourceSlug', async () => {
     const db = new VisitedDatabase(dbPath);
 
-    db.recordSource({
+    await db.recordSource({
       slug: 'quartz',
       name: 'Quartz Scheduler',
       startUrl: 'https://www.quartz-scheduler.org/documentation/quartz-2.5.x/',
       description: 'Enterprise Job Scheduler for Java'
     });
 
-    const source = db.getSource('quartz');
+    const source = await db.getSource('quartz');
     assert.ok(source);
     assert.strictEqual(source?.name, 'Quartz Scheduler');
     assert.strictEqual(source?.startUrl, 'https://www.quartz-scheduler.org/documentation/quartz-2.5.x/');
@@ -48,19 +48,19 @@ describe('VisitedDatabase', () => {
       contentHash: computeHash('# Page 1 Content')
     };
 
-    db.recordVisited(record);
+    await db.recordVisited(record);
 
-    assert.strictEqual(db.hasVisited('https://example.com/docs/page1'), true);
+    assert.strictEqual(await db.hasVisited('https://example.com/docs/page1'), true);
 
-    const fetched = db.getRecord('https://example.com/docs/page1');
+    const fetched = await db.getRecord('https://example.com/docs/page1');
     assert.ok(fetched);
     assert.strictEqual(fetched?.sourceSlug, 'quartz');
     assert.strictEqual(fetched?.relativeFilePath, record.relativeFilePath);
 
-    const allForSource = db.getAllVisited('quartz');
+    const allForSource = await db.getAllVisited('quartz');
     assert.strictEqual(allForSource.length, 1);
     assert.strictEqual(allForSource[0].url, record.url);
 
-    db.close();
+    await db.close();
   });
 });

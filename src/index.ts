@@ -205,14 +205,14 @@ export async function main(
   const finalOutputDir = resolveOutputDir(sourceSlug, 'repo', 'awesome', outputDir);
 
   logger.debug('DATABASE', `Registering source metadata: slug="${sourceSlug}", name="${sourceName}"`);
-  db.recordSource({
+  await db.recordSource({
     slug: sourceSlug,
     name: sourceName,
     startUrl,
     description: sourceDesc
   });
 
-  const existingVisited = db.getAllVisited(sourceSlug);
+  const existingVisited = await db.getAllVisited(sourceSlug);
   logger.debug('DATABASE', `Source "${sourceSlug}" has ${existingVisited.length} previously indexed page(s)`);
   logger.debug('STORAGE', `Final target output directory: ${finalOutputDir}`);
 
@@ -258,7 +258,7 @@ export async function main(
         activeWorkers++;
         totalProcessed++;
         const workerStartTime = Date.now();
-        const isVisited = !force && db.hasVisited(url);
+        const isVisited = !force && await db.hasVisited(url);
 
         if (isVisited) {
           totalSkipped++;
@@ -322,7 +322,7 @@ export async function main(
             const hash = computeHash(markdown);
             logger.debug(`W#${workerId}`, `Saved file: ${saved.relativeFilePath} (SHA-256: ${hash.substring(0, 12)}...)`);
 
-            db.recordVisited({
+            await db.recordVisited({
               url,
               sourceSlug,
               relativeFilePath: saved.relativeFilePath,
@@ -390,7 +390,7 @@ export async function main(
   } finally {
     logger.step('CLEANUP', 'Closing browser instance and SQLite database...');
     await browser.close();
-    db.close();
+    await db.close();
 
     const elapsedSeconds = ((Date.now() - startTime) / 1000).toFixed(2);
     logger.step('COMPLETE', `Documentation crawl finished in ${elapsedSeconds}s`);

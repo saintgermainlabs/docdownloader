@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { Pool } from 'pg';
 import { createHash } from 'crypto';
 import { mkdirSync } from 'fs';
 import { dirname } from 'path';
@@ -107,31 +108,59 @@ export function extractDefaultSlug(startUrl: string): string {
   }
 }
 
+const SRC_COLS = 'slug, name, start_url as "startUrl", description, created_at as "createdAt"';
+const VIS_COLS =
+  'url, source_slug as "sourceSlug", relative_file_path as "relativeFilePath", title, downloaded_at as "downloadedAt", content_hash as "contentHash"';
+
+function toIso(v: unknown): string | undefined {
+  if (v === null || v === undefined) return undefined;
+  return v instanceof Date ? v.toISOString() : String(v);
+}
+
+function normSource(r: any): SourceRecord | undefined {
+  return r ? { ...r, createdAt: toIso(r.createdAt) } : undefined;
+}
+
+function normVisited(r: any): VisitedRecord | undefined {
+  return r ? { ...r, downloadedAt: toIso(r.downloadedAt) } : undefined;
+}
+
 /**
- * SQLite database wrapper for recording and querying documentation sources and visited URLs.
+ * Dual-mode database wrapper for documentation sources and visited URLs.
  *
  * @remarks
- * Uses `better-sqlite3` for fast synchronous SQLite queries and transactions.
+ * If `process.env.DATABASE_URL` is set, uses Postgres (Neon) via a `pg` Pool;
+ * otherwise uses a local SQLite file via `better-sqlite3`. All methods are async.
  */
 export class VisitedDatabase {
-  private db: Database.Database;
+  private db?: Database.Database;
+  private pool?: Pool;
+  private ready: Promise<void>;
+
+  /** True when backed by Postgres (DATABASE_URL set). */
+  readonly isPostgres: boolean;
 
   /**
-   * Initializes or connects to a SQLite database file at `dbPath`.
-   *
-   * @param dbPath - Absolute or relative path to SQLite database file.
+   * @param dbPath - SQLite file path (ignored when DATABASE_URL is set).
+   * @param databaseUrl - Optional Postgres URL override (defaults to `process.env.DATABASE_URL`).
    */
-  constructor(dbPath: string) {
-    mkdirSync(dirname(dbPath), { recursive: true });
-    this.db = new Database(dbPath);
-    this.init();
+  constructor(dbPath: string, databaseUrl: string | undefined = process.env.DATABASE_URL) {
+    if (databaseUrl) {
+      this.isPostgres = true;
+      this.pool = new Pool({ connectionString: databaseUrl, max: 5 });
+      this.ready = this.initPg();
+      this.ready.catch(() => {});
+    } else {
+      this.isPostgres = false;
+      mkdirSync(dirname(dbPath), { recursive: true });
+      this.db = new Database(dbPath);
+      this.initSqlite();
+      this.ready = Promise.resolve();
+    }
   }
 
-  /**
-   * Ensures `sources` and `visited_urls` tables exist with primary and foreign keys.
-   */
-  private init(): void {
-    this.db.exec(`
+  private initSqlite(): void {
+    this.db!.exec(`
       CREATE TABLE IF NOT EXISTS sources (
         slug TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -152,131 +181,131 @@ export class VisitedDatabase {
     `);
   }
 
-  /**
-   * Records or updates a documentation source entry.
-   *
-   * @param record - Source metadata object.
-   */
-  recordSource(record: SourceRecord): void {
+  private async initPg(): Promise<void> {
+    await this.pool!.query(`
+      CREATE TABLE IF NOT EXISTS sources (
+        slug TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        start_url TEXT NOT NULL,
+        description TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS visited_urls (
+        url TEXT PRIMARY KEY,
+        source_slug TEXT NOT NULL REFERENCES sources(slug),
+        relative_file_path TEXT NOT NULL,
+        title TEXT,
+        downloaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        content_hash TEXT
+      );
+    `);
+  }
+
+  private async pg<T = any>(sql: string, params: unknown[] = []): Promise<T[]> {
+    await this.ready;
+    const res = await this.pool!.query(sql, params);
+    return res.rows as T[];
+  }
+
+  /** Records or updates a documentation source entry. */
+  async recordSource(record: SourceRecord): Promise<void> {
     const createdAt = record.createdAt || new Date().toISOString();
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO sources (slug, name, start_url, description, created_at)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-    stmt.run(
-      record.slug,
-      record.name,
-      record.startUrl,
-      record.description || '',
-      createdAt
-    );
+    const params = [record.slug, record.name, record.startUrl, record.description || '', createdAt];
+    if (this.pool) {
+      await this.pg(
+        `INSERT INTO sources (slug, name, start_url, description, created_at)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, start_url = EXCLUDED.start_url,
+           description = EXCLUDED.description, created_at = EXCLUDED.created_at`,
+        params
+      );
+      return;
+    }
+    this.db!.prepare(
+      `INSERT OR REPLACE INTO sources (slug, name, start_url, description, created_at) VALUES (?, ?, ?, ?, ?)`
+    ).run(...params);
   }
 
-  /**
-   * Retrieves a single source record by its slug.
-   *
-   * @param slug - Source slug key.
-   * @returns The matching {@link SourceRecord} or undefined.
-   */
-  getSource(slug: string): SourceRecord | undefined {
-    const stmt = this.db.prepare(`
-      SELECT slug, name, start_url as startUrl, description, created_at as createdAt
-      FROM sources
-      WHERE slug = ?
-    `);
-    return stmt.get(slug) as SourceRecord | undefined;
+  /** Retrieves a single source record by its slug. */
+  async getSource(slug: string): Promise<SourceRecord | undefined> {
+    if (this.pool) {
+      return normSource((await this.pg(`SELECT ${SRC_COLS} FROM sources WHERE slug = $1`, [slug]))[0]);
+    }
+    return this.db!.prepare(`SELECT ${SRC_COLS} FROM sources WHERE slug = ?`).get(slug) as SourceRecord | undefined;
   }
 
-  /**
-   * Returns all recorded documentation sources ordered by creation date.
-   *
-   * @returns Array of {@link SourceRecord} objects.
-   */
-  getAllSources(): SourceRecord[] {
-    const stmt = this.db.prepare(`
-      SELECT slug, name, start_url as startUrl, description, created_at as createdAt
-      FROM sources
-      ORDER BY created_at ASC
-    `);
-    return stmt.all() as SourceRecord[];
+  /** Returns all recorded documentation sources ordered by creation date. */
+  async getAllSources(): Promise<SourceRecord[]> {
+    const sql = `SELECT ${SRC_COLS} FROM sources ORDER BY created_at ASC`;
+    if (this.pool) return (await this.pg(sql)).map((r) => normSource(r)!);
+    return this.db!.prepare(sql).all() as SourceRecord[];
   }
 
-  /**
-   * Checks whether a URL has already been recorded in `visited_urls`.
-   *
-   * @param url - Absolute URL string.
-   * @returns True if already visited, false otherwise.
-   */
-  hasVisited(url: string): boolean {
-    const stmt = this.db.prepare('SELECT 1 FROM visited_urls WHERE url = ?');
-    return !!stmt.get(url);
+  /** Checks whether a URL has already been recorded in `visited_urls`. */
+  async hasVisited(url: string): Promise<boolean> {
+    if (this.pool) return (await this.pg('SELECT 1 FROM visited_urls WHERE url = $1', [url])).length > 0;
+    return !!this.db!.prepare('SELECT 1 FROM visited_urls WHERE url = ?').get(url);
   }
 
-  /**
-   * Retrieves the visited record for a given URL.
-   *
-   * @param url - Absolute URL string.
-   * @returns The matching {@link VisitedRecord} or undefined.
-   */
-  getRecord(url: string): VisitedRecord | undefined {
-    const stmt = this.db.prepare(`
-      SELECT url, source_slug as sourceSlug, relative_file_path as relativeFilePath, title, downloaded_at as downloadedAt, content_hash as contentHash
-      FROM visited_urls
-      WHERE url = ?
-    `);
-    return stmt.get(url) as VisitedRecord | undefined;
+  /** Retrieves the visited record for a given URL. */
+  async getRecord(url: string): Promise<VisitedRecord | undefined> {
+    if (this.pool) {
+      return normVisited((await this.pg(`SELECT ${VIS_COLS} FROM visited_urls WHERE url = $1`, [url]))[0]);
+    }
+    return this.db!.prepare(`SELECT ${VIS_COLS} FROM visited_urls WHERE url = ?`).get(url) as VisitedRecord | undefined;
   }
 
-  /**
-   * Records or updates a visited URL entry.
-   *
-   * @param record - Visited page metadata object.
-   */
-  recordVisited(record: VisitedRecord): void {
+  /** Records or updates a visited URL entry. */
+  async recordVisited(record: VisitedRecord): Promise<void> {
     const downloadedAt = record.downloadedAt || new Date().toISOString();
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO visited_urls (url, source_slug, relative_file_path, title, downloaded_at, content_hash)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-    stmt.run(
+    const params = [
       record.url,
       record.sourceSlug,
       record.relativeFilePath,
       record.title || '',
       downloadedAt,
-      record.contentHash || ''
-    );
-  }
-
-  /**
-   * Retrieves all visited URL records, optionally filtered by `sourceSlug`.
-   *
-   * @param sourceSlug - Optional filter by source slug.
-   * @returns Array of {@link VisitedRecord} objects.
-   */
-  getAllVisited(sourceSlug?: string): VisitedRecord[] {
-    if (sourceSlug) {
-      const stmt = this.db.prepare(`
-        SELECT url, source_slug as sourceSlug, relative_file_path as relativeFilePath, title, downloaded_at as downloadedAt, content_hash as contentHash
-        FROM visited_urls
-        WHERE source_slug = ?
-        ORDER BY downloaded_at ASC
-      `);
-      return stmt.all(sourceSlug) as VisitedRecord[];
+      record.contentHash || '',
+    ];
+    if (this.pool) {
+      await this.pg(
+        `INSERT INTO visited_urls (url, source_slug, relative_file_path, title, downloaded_at, content_hash)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (url) DO UPDATE SET source_slug = EXCLUDED.source_slug,
+           relative_file_path = EXCLUDED.relative_file_path, title = EXCLUDED.title,
+           downloaded_at = EXCLUDED.downloaded_at, content_hash = EXCLUDED.content_hash`,
+        params
+      );
+      return;
     }
-    const stmt = this.db.prepare(`
-      SELECT url, source_slug as sourceSlug, relative_file_path as relativeFilePath, title, downloaded_at as downloadedAt, content_hash as contentHash
-      FROM visited_urls
-      ORDER BY downloaded_at ASC
-    `);
-    return stmt.all() as VisitedRecord[];
+    this.db!.prepare(
+      `INSERT OR REPLACE INTO visited_urls (url, source_slug, relative_file_path, title, downloaded_at, content_hash) VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(...params);
   }
 
-  /**
-   * Closes the SQLite database connection.
-   */
-  close(): void {
-    this.db.close();
+  /** Retrieves all visited URL records, optionally filtered by `sourceSlug`. */
+  async getAllVisited(sourceSlug?: string): Promise<VisitedRecord[]> {
+    if (this.pool) {
+      const rows = sourceSlug
+        ? await this.pg(`SELECT ${VIS_COLS} FROM visited_urls WHERE source_slug = $1 ORDER BY downloaded_at ASC`, [sourceSlug])
+        : await this.pg(`SELECT ${VIS_COLS} FROM visited_urls ORDER BY downloaded_at ASC`);
+      return rows.map((r) => normVisited(r)!);
+    }
+    if (sourceSlug) {
+      return this.db!.prepare(
+        `SELECT ${VIS_COLS} FROM visited_urls WHERE source_slug = ? ORDER BY downloaded_at ASC`
+      ).all(sourceSlug) as VisitedRecord[];
+    }
+    return this.db!.prepare(`SELECT ${VIS_COLS} FROM visited_urls ORDER BY downloaded_at ASC`).all() as VisitedRecord[];
+  }
+
+  /** Closes the SQLite connection or ends the Postgres pool. */
+  async close(): Promise<void> {
+    if (this.pool) {
+      await this.ready.catch(() => {});
+      await this.pool.end();
+      return;
+    }
+    this.db!.close();
   }
 }
 

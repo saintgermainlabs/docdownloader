@@ -18,7 +18,7 @@ describe('importDocs', () => {
     }
   });
 
-  test('parses import CLI flags', () => {
+  test('parses import CLI flags', async () => {
     const opts = parseImportCliArgs(['--dir', './output/coolify', '--slug', 'coolify', '--name', 'Coolify', '--url', 'https://coolify.io/docs', '--description', 'Self-hosted PaaS']);
     assert.strictEqual(opts.dir, './output/coolify');
     assert.strictEqual(opts.slug, 'coolify');
@@ -27,17 +27,17 @@ describe('importDocs', () => {
     assert.strictEqual(opts.description, 'Self-hosted PaaS');
   });
 
-  test('extracts title from Markdown H1 header', () => {
+  test('extracts title from Markdown H1 header', async () => {
     const title = extractMarkdownTitle('# Welcome to Coolify Docs\nSome content...', 'index.md');
     assert.strictEqual(title, 'Welcome to Coolify Docs');
   });
 
-  test('imports mock documentation folder into unified SQLite DB', () => {
+  test('imports mock documentation folder into unified SQLite DB', async () => {
     mkdirSync(join(testDir, 'sub'), { recursive: true });
     writeFileSync(join(testDir, 'index.md'), '# Coolify Overview\nOverview text');
     writeFileSync(join(testDir, 'sub', 'services.md'), '# Services Guide\nServices text');
 
-    const count = importDocs({
+    const count = await importDocs({
       dir: testDir,
       slug: 'coolify',
       name: 'Coolify Platform',
@@ -49,17 +49,17 @@ describe('importDocs', () => {
     assert.strictEqual(count, 2);
 
     const db = new VisitedDatabase(dbPath);
-    const source = db.getSource('coolify');
+    const source = await db.getSource('coolify');
     assert.ok(source);
     assert.strictEqual(source?.name, 'Coolify Platform');
 
-    const records = db.getAllVisited('coolify');
+    const records = await db.getAllVisited('coolify');
     assert.strictEqual(records.length, 2);
 
     const titles = records.map((r) => r.title);
     assert.ok(titles.includes('Coolify Overview'));
     assert.ok(titles.includes('Services Guide'));
 
-    db.close();
+    await db.close();
   });
 });

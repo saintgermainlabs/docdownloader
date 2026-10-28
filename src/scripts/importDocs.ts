@@ -113,7 +113,7 @@ export function extractMarkdownTitle(content: string, fallbackFileName: string):
  * @throws {Error} Thrown if `--dir` path is not provided.
  * @returns Number of imported documents.
  */
-export function importDocs(options: ImportDocsOptions): number {
+export async function importDocs(options: ImportDocsOptions): Promise<number> {
   if (!options.dir) {
     throw new Error('Please provide a directory path using --dir <path>');
   }
@@ -127,7 +127,7 @@ export function importDocs(options: ImportDocsOptions): number {
 
   const db = new VisitedDatabase(dbPath);
 
-  db.recordSource({
+  await db.recordSource({
     slug: sourceSlug,
     name: sourceName,
     startUrl,
@@ -154,7 +154,7 @@ export function importDocs(options: ImportDocsOptions): number {
       }
     }
 
-    db.recordVisited({
+    await db.recordVisited({
       url: docUrl,
       sourceSlug,
       relativeFilePath,
@@ -165,7 +165,7 @@ export function importDocs(options: ImportDocsOptions): number {
     importedCount++;
   }
 
-  db.close();
+  await db.close();
   console.log(`Imported ${importedCount} document(s) for source "${sourceSlug}" into ${dbPath}`);
   return importedCount;
 }
@@ -204,10 +204,8 @@ if (require.main === module) {
     printImportDocsHelp();
     process.exit(1);
   }
-  try {
-    importDocs(options);
-  } catch (err: any) {
+  importDocs(options).catch((err: any) => {
     console.error('Import failed:', err.message);
     process.exit(1);
-  }
+  });
 }

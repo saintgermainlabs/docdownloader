@@ -61,7 +61,7 @@ export async function downloadGithubDocs(options: GithubDocsOptions): Promise<nu
   const db = new VisitedDatabase(dbPath);
   const sourceSlug = urlInfo.repo;
 
-  db.recordSource({
+  await db.recordSource({
     slug: sourceSlug,
     name: urlInfo.repo,
     startUrl: options.repoUrl,
@@ -82,7 +82,7 @@ export async function downloadGithubDocs(options: GithubDocsOptions): Promise<nu
       const hash = computeHash(readmeRes.content);
       const fileUrl = `https://github.com/${urlInfo.owner}/${urlInfo.repo}/blob/${branch}/${readmeRes.fileName}`;
 
-      db.recordVisited({
+      await db.recordVisited({
         url: fileUrl,
         sourceSlug,
         relativeFilePath: relativePath,
@@ -125,7 +125,7 @@ export async function downloadGithubDocs(options: GithubDocsOptions): Promise<nu
         const hash = computeHash(fileContent);
         const fileUrl = `https://github.com/${urlInfo.owner}/${urlInfo.repo}/blob/${branch}/${entry.path}`;
 
-        db.recordVisited({
+        await db.recordVisited({
           url: fileUrl,
           sourceSlug,
           relativeFilePath: relativePath,
@@ -141,7 +141,7 @@ export async function downloadGithubDocs(options: GithubDocsOptions): Promise<nu
     }
   }
 
-  db.close();
+  await db.close();
   console.log(`Finished github_docs processing for ${urlInfo.repo} (${downloadedCount} file(s) saved to ${outputDir})`);
   return downloadedCount;
 }
