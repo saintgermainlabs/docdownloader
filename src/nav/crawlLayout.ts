@@ -1,4 +1,5 @@
-import { rename, mkdir, access } from 'fs/promises';
+import { rename, mkdir, readFile } from 'fs/promises';
+import { computeHash } from '../storage/database';
 import { join, dirname } from 'path';
 import { LayoutPlan } from './types';
 import { navUrlKey } from './layout';
@@ -30,21 +31,75 @@ export function shouldSavePage(status: number | undefined): boolean {
   return status === undefined || status < 400;
 }
 
+/** Strips a leading YAML frontmatter block written by `saveMarkdownAt`. */
+function bodyOf(text: string): string {
+  const m = text.match(/^---\n[\s\S]*?\n---\n\n?/);
+  return m ? text.slice(m[0].length) : text;
+}
+
 /**
  * Moves a previously saved file to its new planned path (when the sidebar changed).
  *
- * @returns True if a file was moved.
+ * @param expectedHash - SHA-256 of the page body recorded in the index; when given, the move is
+ *   refused if the file no longer holds that page (e.g. another page was saved over it).
+ * @returns `moved`, `unchanged` (same path), or `stale` (file missing or not this page's
+ *   content; the caller should download the page again).
  */
-export async function relocateIfMoved(baseDir: string, oldPath: string, newPath: string): Promise<boolean> {
-  if (oldPath === newPath) return false;
+export async function relocateIfMoved(
+  baseDir: string,
+  oldPath: string,
+  newPath: string,
+  expectedHash?: string
+): Promise<'moved' | 'unchanged' | 'stale'> {
+  if (oldPath === newPath) return 'unchanged';
+  if (oldPath.startsWith('..')) return 'stale';
   const from = join(baseDir, oldPath);
+  let text: string;
   try {
-    await access(from);
+    text = await readFile(from, 'utf-8');
   } catch {
-    return false;
+    return 'stale';
   }
+  if (expectedHash && computeHash(bodyOf(text)) !== expectedHash) return 'stale';
   const to = join(baseDir, newPath);
   await mkdir(dirname(to), { recursive: true });
   await rename(from, to);
+  return 'moved';
+}
+
+/**
+ * When a sidebar URL redirects, gives its planned slot to the redirect target
+ * (if the target has no slot of its own).
+ *
+ * @returns True if the slot was carried over.
+ */
+export function carryPlannedPath(plan: LayoutPlan, from: string, to: string): boolean {
+  const fromKey = navUrlKey(from, from);
+  const toKey = navUrlKey(to, to);
+  if (!fromKey || !toKey) return false;
+  const path = plan.paths.get(fromKey);
+  if (!path || plan.paths.has(toKey)) return false;
+  plan.paths.set(toKey, path);
   return true;
+}
+
+/** Queue key for a discovered link: with a sidebar plan, slash/hash variants collapse to one key. */
+export function queueKey(url: string, hasPlan: boolean): string {
+  return hasPlan ? navUrlKey(url, url) ?? url : url;
+}
+
+/**
+ * The URL crawl scope is measured against: the start URL, moved to the final URL's origin when
+ * the seed redirected to another origin (http -> https, www). The start path is kept, so a seed
+ * that redirects deeper (`/docs/x` -> `/docs/x/overview`) does not narrow the scope.
+ */
+export function scopeBaseAfterRedirect(startUrl: string, finalUrl: string): string {
+  try {
+    const start = new URL(startUrl);
+    const final = new URL(finalUrl);
+    if (start.origin === final.origin) return startUrl;
+    return final.origin + start.pathname + start.search;
+  } catch {
+    return startUrl;
+  }
 }

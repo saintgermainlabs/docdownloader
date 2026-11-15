@@ -71,6 +71,24 @@ describe('GitHub template scan', () => {
     assert.deepStrictEqual(byKind(fs, 'readme')[0]?.details?.files, ['docs/README.md']);
   });
 
+  test('refs containing a slash are resolved by trying longer prefixes', async () => {
+    const calls: string[] = [];
+    const fs = await scanRepo(
+      parseGithubUrl('https://github.com/o/r/tree/feature/x/docs'),
+      deps({
+        tree: async (ref: string) => {
+          calls.push(ref);
+          if (ref !== 'feature/x') throw new Error('GitHub API 404: Not Found');
+          return parseGitTreeResponse(treeJson, 'o', 'r', ref);
+        },
+      })
+    );
+    assert.deepStrictEqual(calls, ['feature', 'feature/x']);
+    const folder = byKind(fs, 'doc-folder')[0];
+    assert.strictEqual(folder.details?.ref, 'feature/x');
+    assert.strictEqual(folder.details?.folder, 'docs');
+  });
+
   test('truncated tree adds a warning', async () => {
     const fs = await scanRepo(
       parseGithubUrl('https://github.com/o/r'),
@@ -131,6 +149,22 @@ describe('GitHub template detect/run', () => {
     const res = await t.run!(folder, { outputDir: out, dbPath: join(out, 't.db') });
     assert.ok(existsSync(join(out, 'docs', '01-home.md')));
     assert.ok(res.warnings.some((w) => w.includes('docs/guide/install.md')));
+  });
+
+  test('an unreadable sidebar config falls back to the folder layout', async () => {
+    const t = createGithubTemplate(
+      deps({
+        fetchText: async (url: string) => {
+          if (url.endsWith('/mkdocs.yml')) throw new Error('status: 500');
+          return '# ok';
+        },
+      })
+    );
+    const folder = (await t.detect(probe('https://github.com/o/r'))).find((f) => f.kind === 'doc-folder')!;
+    const out = mkdtempSync(join(tmpdir(), 'ddl-gh-'));
+    const res = await t.run!(folder, { outputDir: out, dbPath: join(out, 't.db') });
+    assert.ok(existsSync(join(out, 'docs', 'index.md')));
+    assert.ok(res.warnings.some((w) => /mkdocs\.yml/.test(w)));
   });
 
   test('running a readme finding mirrors README paths', async () => {

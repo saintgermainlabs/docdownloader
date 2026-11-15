@@ -11,7 +11,16 @@ import { writeFile, mkdir } from 'fs/promises';
 import { relative } from 'path';
 import { extractNav } from './nav/registry';
 import { planLayout, buildTreeJson } from './nav/layout';
-import { matchPlannedPath, unlistedPath, shouldSavePage, relocateIfMoved, redirectTarget } from './nav/crawlLayout';
+import {
+  matchPlannedPath,
+  unlistedPath,
+  shouldSavePage,
+  relocateIfMoved,
+  redirectTarget,
+  carryPlannedPath,
+  queueKey,
+  scopeBaseAfterRedirect,
+} from './nav/crawlLayout';
 import { LayoutPlan } from './nav/types';
 
 /** Totals returned by {@link main}. */
@@ -265,12 +274,15 @@ export async function main(
   logger.debug('QUEUE', `Enqueued initial seed URL: ${initialUrl} (Queue length: ${queue.size})`);
 
   const warnings: string[] = [];
+  // Scope is measured against the seed's final URL (e.g. after an http -> https redirect).
+  let scopeBase = startUrl;
   let navPlan: LayoutPlan | undefined;
   let navFramework = '';
   if (layout === 'nav') {
     navPlan = await planNavLayout(browser, initialUrl, startUrl, scope);
     if (navPlan) {
       navFramework = (navPlan as LayoutPlan & { framework?: string }).framework || '';
+      scopeBase = (navPlan as LayoutPlan & { scopeBase?: string }).scopeBase || scopeBase;
       for (const planned of navPlan.paths.keys()) queue.add(planned);
       logger.step('NAV', `Sidebar tree found (${navFramework}): ${navPlan.paths.size} page(s) planned`);
     } else {
@@ -315,7 +327,7 @@ export async function main(
         activeWorkers++;
         totalProcessed++;
         const workerStartTime = Date.now();
-        const isVisited = !force && await db.hasVisited(url);
+        let isVisited = !force && await db.hasVisited(url);
 
         if (isVisited) {
           totalSkipped++;
@@ -371,7 +383,9 @@ export async function main(
           const redirectedTo = redirectTarget(url, page.url());
           if (redirectedTo) {
             if (!isVisited) totalDownloaded--;
-            if (isUrlInScope(redirectedTo, startUrl, scope)) queue.add(redirectedTo);
+            if (url === initialUrl) scopeBase = scopeBaseAfterRedirect(startUrl, redirectedTo);
+            if (navPlan) carryPlannedPath(navPlan, url, redirectedTo);
+            if (isUrlInScope(redirectedTo, scopeBase, scope)) queue.add(queueKey(redirectedTo, !!navPlan));
             logger.debug(`W#${workerId}`, `[REDIRECT] ${url} -> ${redirectedTo}; queued final URL, alias not saved`);
             continue;
           }
@@ -381,9 +395,16 @@ export async function main(
             const record = await db.getRecord(url);
             if (record) {
               const oldRel = relative(finalOutputDir, record.relativeFilePath);
-              if (await relocateIfMoved(finalOutputDir, oldRel, targetPath)) {
+              const moved = await relocateIfMoved(finalOutputDir, oldRel, targetPath, record.contentHash);
+              if (moved === 'moved') {
                 await db.recordVisited({ ...record, relativeFilePath: join(finalOutputDir, targetPath) });
                 logger.debug(`W#${workerId}`, `Moved ${oldRel} -> ${targetPath} (sidebar changed)`);
+              } else if (moved === 'stale') {
+                // The old file is gone or now holds another page: download this page again.
+                isVisited = false;
+                totalSkipped--;
+                totalDownloaded++;
+                logger.debug(`W#${workerId}`, `Saved copy of ${url} is missing or overwritten; downloading again`);
               }
             }
           }
@@ -432,10 +453,10 @@ export async function main(
               continue;
             }
 
-            const inScope = isUrlInScope(normalized, startUrl, scope);
+            const inScope = isUrlInScope(normalized, scopeBase, scope);
             if (inScope) {
               inScopeCount++;
-              const added = queue.add(normalized);
+              const added = queue.add(queueKey(normalized, !!navPlan));
               if (added) {
                 newlyQueuedCount++;
                 logger.debug(`W#${workerId}`, `[LINK-IN-SCOPE:NEW] ${normalized}`);
@@ -514,7 +535,7 @@ async function planNavLayout(
   initialUrl: string,
   startUrl: string,
   scope: CrawlScope
-): Promise<(LayoutPlan & { framework: string }) | undefined> {
+): Promise<(LayoutPlan & { framework: string; scopeBase: string }) | undefined> {
   const page = await browser.newPage();
   try {
     const response = await page.goto(initialUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
@@ -523,12 +544,13 @@ async function planNavLayout(
     const html = await page.content();
     const nav = await extractNav({ html, page, url: page.url() });
     if (!nav) return undefined;
+    const scopeBase = scopeBaseAfterRedirect(startUrl, page.url());
     const plan = planLayout(nav.nodes, {
       baseUrl: page.url(),
-      inScope: (u) => isUrlInScope(u, startUrl, scope),
+      inScope: (u) => isUrlInScope(u, scopeBase, scope),
     });
     if (plan.paths.size === 0) return undefined;
-    return Object.assign(plan, { framework: nav.framework });
+    return Object.assign(plan, { framework: nav.framework, scopeBase });
   } catch (error: any) {
     logger.debug('NAV', `Sidebar extraction failed: ${error.message}`);
     return undefined;

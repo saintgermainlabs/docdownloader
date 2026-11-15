@@ -42,7 +42,8 @@ export const domExpandExtractor: NavExtractor = {
     // Open collapsed folders until none are left (or the caps are hit).
     const started = Date.now();
     for (let clicks = 0; clicks < MAX_CLICKS && Date.now() - started < MAX_MS; clicks++) {
-      const selector = `[${ROOT_ATTR}] [aria-expanded="false"]:not([${CLICKED_ATTR}])`;
+      // Never click links: they navigate away (e.g. Docusaurus category links carry aria-expanded).
+      const selector = `[${ROOT_ATTR}] [aria-expanded="false"]:not(a):not([${CLICKED_ATTR}])`;
       const next = await page.$(selector);
       if (!next) {
         const openedDetails = await page.evaluate((attr: string) => {

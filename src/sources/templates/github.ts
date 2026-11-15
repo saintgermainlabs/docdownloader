@@ -48,6 +48,33 @@ function command(info: GithubRepoUrlInfo, kind: string): string {
 }
 
 /**
+ * Fetches the tree for the URL's ref. `/tree/<a>/<b>/<path>` is ambiguous when the ref contains
+ * slashes (`feature/x`): on a 404, longer ref prefixes are tried and `info` is updated in place.
+ */
+async function fetchTreeResolvingRef(
+  info: GithubRepoUrlInfo,
+  deps: GithubDeps,
+  defaultBranch: string
+): ReturnType<GithubDeps["tree"]> {
+  if (!info.branch) return deps.tree(defaultBranch);
+  const rest = info.treePath ? info.treePath.split('/') : [];
+  let lastError: unknown;
+  for (let take = 0; take <= rest.length; take++) {
+    const ref: string = [info.branch, ...rest.slice(0, take)].join('/');
+    try {
+      const tree = await deps.tree(ref);
+      info.branch = ref;
+      info.treePath = rest.slice(take).join('/') || undefined;
+      return tree;
+    } catch (error: any) {
+      lastError = error;
+      if (!/\b404\b/.test(String(error?.message ?? error))) throw error;
+    }
+  }
+  throw lastError;
+}
+
+/**
  * Scans a GitHub repository (or `/tree/<ref>/<path>` subtree) and returns one finding per
  * documentation set: READMEs, doc folders (with their sidebar config), skills, documents,
  * plus informational suggestions (homepage docs site, DeepWiki).
@@ -58,7 +85,7 @@ export async function scanRepo(info: GithubRepoUrlInfo, deps: GithubDeps): Promi
   let tree: Awaited<ReturnType<GithubDeps['tree']>>;
   try {
     meta = await deps.meta();
-    tree = await deps.tree(info.branch || meta.defaultBranch);
+    tree = await fetchTreeResolvingRef(info, deps, meta.defaultBranch);
   } catch (error: any) {
     const message = String(error?.message ?? error);
     const hint = /\b(403|429)\b|rate limit/i.test(message) ? ' — set GITHUB_TOKEN (or GH_TOKEN) to raise the limit' : '';
@@ -66,6 +93,7 @@ export async function scanRepo(info: GithubRepoUrlInfo, deps: GithubDeps): Promi
   }
 
   const ref = info.branch || meta.defaultBranch;
+
   const scanRoot = info.treePath?.replace(/\/+$/, '') ?? '';
   const paths = tree.files
     .map((f) => f.path)
@@ -263,6 +291,7 @@ export function createGithubTemplate(overrides?: GithubDeps): SourceHandler {
           const files: string[] = d.files;
           let nodes: NavNode[] | undefined;
           if (d.navConfig && d.configPath) {
+            try {
             const repoFiles = new Map<string, string>((d.allPaths as string[]).map((p) => [p, '']));
             repoFiles.set(d.configPath, await deps.fetchText(rawBase + d.configPath));
             if (d.navConfig === 'fumadocs-meta') {
@@ -272,6 +301,10 @@ export function createGithubTemplate(overrides?: GithubDeps): SourceHandler {
             }
             const ex = getExtractor(d.navConfig);
             nodes = ex ? await ex.extract({ url: info.rawRepoUrl, repoFiles, configPath: d.configPath }) : [];
+            } catch (error: any) {
+              nodes = [];
+              warnings.push(`${d.configPath}: ${error?.message ?? error}`);
+            }
             if (!nodes.length) warnings.push(`could not read ${d.configPath}; using folder layout`);
           }
 

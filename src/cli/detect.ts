@@ -4,6 +4,18 @@ import { detectAll, getHandler } from '../sources/registry';
 import { registerBuiltinHandlers } from '../sources/handlers';
 import { Finding, Probe, RunOptions, SourceHandler } from '../sources/types';
 
+/**
+ * Normalizes user input: `owner/repo` → GitHub URL; scheme-less hosts get `https://`.
+ */
+export function normalizeInputUrl(input: string): string {
+  const value = input.trim();
+  if (/^https?:\/\//i.test(value)) return value;
+  if (/^[A-Za-z0-9_-][\w-]*\/[\w.-]+\/?$/.test(value) && !value.split('/')[0].includes('.')) {
+    return `https://github.com/${value.replace(/\/$/, '')}`;
+  }
+  return `https://${value}`;
+}
+
 /** Parsed `detect` arguments. */
 export interface DetectArgs {
   url: string;
@@ -151,7 +163,7 @@ export async function runDetect(argv: string[], deps: DetectDeps = {}): Promise<
 
   let probe: Probe;
   try {
-    probe = await probeFn(args.url);
+    probe = await probeFn(normalizeInputUrl(args.url));
   } catch (error: any) {
     out(`Error: ${error?.message ?? error}`);
     return 1;

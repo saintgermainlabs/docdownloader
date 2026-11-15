@@ -21,6 +21,7 @@ describe('domExpand extractor (browser)', { skip: !live && 'set DOC_DL_LIVE_TEST
       const input = { page, url: page.url() };
       assert.ok(domExpandExtractor.matches(input));
       const nodes = await domExpandExtractor.extract(input);
+      assert.strictEqual(page.url(), 'https://docs.test/docs/intro', 'extraction must not navigate away');
       assert.deepStrictEqual(simplify(nodes), [
         ['separator', 'Get Started', undefined, [
           ['link', 'Intro', 'https://docs.test/docs/intro'],
@@ -30,7 +31,10 @@ describe('domExpand extractor (browser)', { skip: !live && 'set DOC_DL_LIVE_TEST
             ['folder', 'More', undefined, [['link', 'C', 'https://docs.test/docs/guides/more/c']]],
           ]],
         ]],
-        ['separator', 'Reference', undefined, [['link', 'API', 'https://docs.test/docs/api']]],
+        ['separator', 'Reference', undefined, [
+          ['link', 'API', 'https://docs.test/docs/api'],
+          ['link', 'Category Link', 'https://docs.test/docs/cat'],
+        ]],
       ]);
     } finally {
       await browser.close();

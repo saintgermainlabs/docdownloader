@@ -1,6 +1,6 @@
 import assert from 'node:assert';
 import { test, describe } from 'node:test';
-import { parseDetectArgs, formatReport, runDetect, selectRunnable } from '../src/cli/detect';
+import { parseDetectArgs, formatReport, runDetect, selectRunnable, normalizeInputUrl } from '../src/cli/detect';
 import { Finding, Probe, SourceHandler, RunOptions } from '../src/sources/types';
 
 const probe: Probe = {
@@ -49,6 +49,19 @@ describe('parseDetectArgs', () => {
     assert.strictEqual(a.run, true);
     assert.strictEqual(a.layout, 'url');
     assert.deepStrictEqual(a.only, ['readme']);
+  });
+});
+
+describe('normalizeInputUrl', () => {
+  test('owner/repo shorthand becomes a GitHub URL', () => {
+    assert.strictEqual(normalizeInputUrl('kepano/obsidian-skills'), 'https://github.com/kepano/obsidian-skills');
+  });
+  test('scheme-less hosts get https://', () => {
+    assert.strictEqual(normalizeInputUrl('docs.example.com/guide'), 'https://docs.example.com/guide');
+    assert.strictEqual(normalizeInputUrl('github.com/o/r'), 'https://github.com/o/r');
+  });
+  test('full URLs are unchanged', () => {
+    assert.strictEqual(normalizeInputUrl('http://x.test/a'), 'http://x.test/a');
   });
 });
 
