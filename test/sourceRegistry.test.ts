@@ -101,6 +101,17 @@ describe('source registry', () => {
     assert.strictEqual(findings[0].details?.framework, 'fumadocs');
   });
 
+  test('a browser that cannot start becomes a visible warning', async () => {
+    registerBuiltinHandlers();
+    registerHandler(createDocsSiteHandler({ render: async () => { throw new Error("Executable doesn't exist"); } }));
+    const findings = await detectAll(probe({ html: '<div id="root"></div>', needsBrowser: true }));
+    const w = findings.find((f) => f.kind === 'warning');
+    assert.ok(w, 'warning finding present');
+    assert.strictEqual(w!.runnable, false);
+    assert.match(w!.summary, /npx playwright install chromium/);
+    assert.match(w!.summary, /DOC_DL_BROWSER_CHANNEL/);
+  });
+
   test('no render when the page is already rich', async () => {
     let renders = 0;
     registerHandler(createDocsSiteHandler({ render: async () => { renders++; return ''; } }));

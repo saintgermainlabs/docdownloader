@@ -1,6 +1,7 @@
 import assert from 'node:assert';
 import { test, describe } from 'node:test';
 import {
+  chooseMainContent,
   defaultClipFilename,
   parseClipCliArgs,
   slugifyClipName,
@@ -50,5 +51,23 @@ describe('clip CLI helpers', () => {
     assert.match(md, /source: https:\/\/example.com/);
     assert.match(md, /type: clipping/);
     assert.match(md, /# Hello/);
+  });
+});
+
+
+describe('chooseMainContent', () => {
+  test('picks the candidate with the most text, not the first', () => {
+    const pick = chooseMainContent([{ textLength: 120 }, { textLength: 5000 }, { textLength: 300 }], 6000);
+    assert.strictEqual(pick, 1);
+  });
+
+  test('falls back to the body when the best candidate covers little of the page (Redoc)', () => {
+    const many = Array.from({ length: 40 }, () => ({ textLength: 150 }));
+    assert.strictEqual(chooseMainContent(many, 137000), -1);
+  });
+
+  test('ignores tiny candidates and handles none', () => {
+    assert.strictEqual(chooseMainContent([{ textLength: 50 }], 60), -1);
+    assert.strictEqual(chooseMainContent([], 1000), -1);
   });
 });

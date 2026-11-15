@@ -99,6 +99,25 @@ export function parseClipCliArgs(argv: string[]): ClipCliOptions {
   return { url, outputDir, filename, title, dbPath, noDb, help, debug };
 }
 
+/** Minimum share of the page's text the main-content element must hold to be used instead of `<body>`. */
+const MAIN_CONTENT_MIN_SHARE = 0.3;
+
+/**
+ * Picks the main-content element among candidates (by text length). Returns -1 to use the whole
+ * body: when there are no candidates, or the best one holds less than 30% of the page's text
+ * (e.g. Redoc, where many small `<article>` boxes exist but none is the page).
+ */
+export function chooseMainContent(candidates: Array<{ textLength: number }>, bodyTextLength: number): number {
+  let best = -1;
+  candidates.forEach((c, i) => {
+    if (best === -1 || c.textLength > candidates[best].textLength) best = i;
+  });
+  if (best === -1) return -1;
+  const length = candidates[best].textLength;
+  if (length <= 80 || length < bodyTextLength * MAIN_CONTENT_MIN_SHARE) return -1;
+  return best;
+}
+
 /**
  * Turns a string into a filesystem-safe slug.
  *
@@ -213,26 +232,34 @@ export async function clipPage(options: {
     logger.debug('CLIP', `Resolved page title: "${pageTitle}"`);
 
     logger.debug('CLIP', 'Extracting article/main content from DOM...');
-    const contentHtml = await page.evaluate(() => {
-      const selectors = [
-        'article',
-        'main',
-        '[role="main"]',
-        '.markdown-body',
-        '.md-content',
-        '.docMainContainer',
-        '.theme-doc-markdown',
-        '#content',
-        '.content',
-      ];
+    const SELECTORS = [
+      'article',
+      'main',
+      '[role="main"]',
+      '.markdown-body',
+      '.md-content',
+      '.docMainContainer',
+      '.theme-doc-markdown',
+      '#content',
+      '.content',
+    ];
+    const measured = await page.evaluate((selectors: string[]) => {
+      const candidates: Array<{ selector: string; index: number; textLength: number }> = [];
       for (const selector of selectors) {
-        const el = document.querySelector(selector);
-        if (el && (el as HTMLElement).innerHTML.trim().length > 80) {
-          return (el as HTMLElement).innerHTML;
-        }
+        document.querySelectorAll(selector).forEach((el, index) => {
+          candidates.push({ selector, index, textLength: ((el as HTMLElement).innerText || '').trim().length });
+        });
       }
-      return document.body?.innerHTML || '';
-    });
+      return { candidates, bodyTextLength: (document.body?.innerText || '').trim().length };
+    }, SELECTORS);
+    const picked = chooseMainContent(measured.candidates, measured.bodyTextLength);
+    const target = picked >= 0 ? measured.candidates[picked] : undefined;
+    logger.debug('CLIP', target ? `Main content: ${target.selector}[${target.index}]` : 'Main content: <body>');
+    const contentHtml = await page.evaluate(
+      (t: { selector: string; index: number } | undefined) =>
+        t ? (document.querySelectorAll(t.selector)[t.index] as HTMLElement).innerHTML : document.body?.innerHTML || '',
+      target ? { selector: target.selector, index: target.index } : undefined
+    );
     logger.debug('CLIP', `Extracted content HTML length: ${contentHtml.length} characters`);
 
     logger.debug('CLIP', 'Converting HTML to Markdown...');

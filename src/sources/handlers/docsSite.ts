@@ -38,8 +38,25 @@ export function createDocsSiteHandler(deps: { render?: (url: string) => Promise<
       let html = probe.html ?? '';
       let frameworks = probe.frameworks;
       if (probe.needsBrowser) {
-        html = await render(probe.finalUrl);
-        frameworks = detectFrameworks(html);
+        try {
+          html = await render(probe.finalUrl);
+          frameworks = detectFrameworks(html);
+        } catch (error: any) {
+          const reason = String(error?.message ?? error).split('\n')[0];
+          return [
+            {
+              handler: 'docs-site',
+              kind: 'warning',
+              url: probe.finalUrl,
+              confidence: 0.2,
+              summary:
+                `This page needs a browser to render, but none could start (${reason}). ` +
+                'Run `npx playwright install chromium` or set DOC_DL_BROWSER_CHANNEL=chrome, then detect again.',
+              command: '',
+              runnable: false,
+            },
+          ];
+        }
       }
       const nav = html ? await extractNav({ html, url: probe.finalUrl }) : null;
       const docsPath = DOCS_PATH.test(new URL(probe.finalUrl).pathname);
