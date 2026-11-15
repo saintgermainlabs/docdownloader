@@ -47,6 +47,16 @@ describe('probeUrl', () => {
     assert.strictEqual(probe.sitemapUrls?.length, 3);
   });
 
+  test('a sitemap index is flagged as such', async () => {
+    const idx = '<sitemapindex><sitemap><loc>https://s.test/sitemap-0.xml</loc></sitemap></sitemapindex>';
+    const probe = await probeUrl(
+      'https://s.test/',
+      fakeFetch({ 'https://s.test/': { body: richHtml }, 'https://s.test/sitemap.xml': { body: idx } })
+    );
+    assert.strictEqual(probe.sitemapIsIndex, true);
+    assert.deepStrictEqual(probe.sitemapUrls, ['https://s.test/sitemap-0.xml']);
+  });
+
   test('a failing side request is recorded without failing the probe', async () => {
     const probe = await probeUrl(
       'https://s.test/',

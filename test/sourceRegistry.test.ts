@@ -54,6 +54,12 @@ describe('source registry', () => {
     assert.ok(docs && docs.runnable === false && /need Docling conversion/.test(docs.summary));
   });
 
+  test('sitemap index is summarised as an index', async () => {
+    registerBuiltinHandlers();
+    const findings = await detectAll(probe({ sitemapUrls: ['https://s.test/a.xml'], sitemapIsIndex: true }));
+    assert.strictEqual(findings.find((f) => f.kind === 'sitemap')?.summary, 'sitemap index (1 sitemap)');
+  });
+
   test('bare page yields only the single-page fallback', async () => {
     registerBuiltinHandlers();
     const findings = await detectAll(probe());

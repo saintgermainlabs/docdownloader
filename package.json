@@ -31,7 +31,8 @@
     "docs_dl": "./bin/docs_dl",
     "ddocs": "./bin/ddocs",
     "docdownloader-clip": "./dist/src/scripts/clip.js",
-    "docdownloader-skill": "./dist/src/skills/index.js"
+    "docdownloader-skill": "./dist/src/skills/index.js",
+    "doc-dl-detect": "./dist/src/cli/detect.js"
   },
   "files": [
     "dist/src",
@@ -56,7 +57,8 @@
     "docs:typedoc": "typedoc",
     "docs:sphinx": "typedoc && sphinx-build -b html docs docs/build/sphinx",
     "docs": "npm run docs:typedoc",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "detect": "tsc && node dist/src/cli/detect.js"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

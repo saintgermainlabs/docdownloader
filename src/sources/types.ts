@@ -10,6 +10,8 @@ export interface Probe {
   html?: string;
   llmsTxt?: string;
   sitemapUrls?: string[];
+  /** True when sitemap.xml is a sitemap index (its URLs are nested sitemaps, not pages). */
+  sitemapIsIndex?: boolean;
   /** Docs framework fingerprints found in the HTML (e.g. `fumadocs`, `docusaurus`). */
   frameworks: string[];
   /** Linked document files (PDF, Office, images) as absolute URLs. */

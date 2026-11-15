@@ -91,10 +91,12 @@ export async function probeUrl(url: string, fetchImpl: FetchLike = fetch as unkn
   }
 
   let sitemapUrls: string[] | undefined;
+  let sitemapIsIndex: boolean | undefined;
   if (sitemap.status === 'fulfilled') {
     if (sitemap.value.res.status === 200) {
       const locs = [...sitemap.value.body.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map((m) => m[1]);
       if (locs.length) sitemapUrls = locs;
+      if (/<sitemapindex/i.test(sitemap.value.body)) sitemapIsIndex = true;
     }
   } else {
     errors.sitemap = String(sitemap.reason?.message ?? sitemap.reason);
@@ -109,6 +111,7 @@ export async function probeUrl(url: string, fetchImpl: FetchLike = fetch as unkn
     html,
     llmsTxt,
     sitemapUrls,
+    sitemapIsIndex,
     frameworks,
     fileLinks: html ? findFileLinks(html, finalUrl) : [],
     needsBrowser: !!html && frameworks.length === 0 && visibleTextLength(html) < 200,

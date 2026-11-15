@@ -68,7 +68,9 @@ export const siteIndexHandler: SourceHandler = {
         kind: 'sitemap',
         url: `${origin}/sitemap.xml`,
         confidence: 0.3,
-        summary: `${probe.sitemapUrls.length.toLocaleString('en-US')} URLs`,
+        summary: probe.sitemapIsIndex
+          ? `sitemap index (${probe.sitemapUrls.length} sitemap${probe.sitemapUrls.length === 1 ? '' : 's'})`
+          : `${probe.sitemapUrls.length.toLocaleString('en-US')} URLs`,
         command: '',
         runnable: false,
       });

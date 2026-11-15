@@ -66,6 +66,7 @@ ${BOLD}USAGE:${RESET}
 ${BOLD}CORE COMMANDS:${RESET}
   ${BOLD}dl${RESET} <URL> [opts]          User-friendly downloader into Obsidian (${VAULT_NAME})
   ${BOLD}skill${RESET} <URL> [opts]       Download agent skills into ${BOLD}skills/${RESET}
+  ${BOLD}detect${RESET} <URL> [--json|--run]  Find what docs a URL offers and how to download them
   ${BOLD}clip${RESET} <URL> [opts]        Clip single page to ${BOLD}clippings/${RESET}
   ${BOLD}crawl${RESET} <URL> <outputDir> [opts]  Crawl complete documentation into target directory
   ${BOLD}gh${RESET} <URL> [opts]          Download GitHub repository docs into ${BOLD}Documents/${RESET}
@@ -178,6 +179,12 @@ case "$CMD" in
     log_debug "Resolved KNOWLEDGE_ROOT=${KNOWLEDGE_ROOT}"
     log_debug "Executing node ${PROJECT_ROOT}/dist/src/skills/index.js $*"
     exec node "${PROJECT_ROOT}/dist/src/skills/index.js" "$@"
+    ;;
+
+  detect)
+    ensure_build
+    log_debug "Executing node ${PROJECT_ROOT}/dist/src/cli/detect.js $*"
+    exec node "${PROJECT_ROOT}/dist/src/cli/detect.js" "$@"
     ;;
 
   clip)
