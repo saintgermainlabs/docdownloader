@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html><body>
+<aside>
+  <nav aria-label="Docs sidebar">
+    <p>Get Started</p>
+    <a href="/docs/intro">Intro</a>
+    <div>
+      <button aria-expanded="false" data-folder="guides">Guides</button>
+      <div class="kids" hidden></div>
+    </div>
+    <p>Reference</p>
+    <a href="/docs/api">API</a>
+  </nav>
+</aside>
+<main><h1>Intro</h1><p>Body text.</p><a href="/elsewhere">Not sidebar</a></main>
+<script>
+  const content = {
+    guides: '<a href="/docs/guides/a">A</a><a href="/docs/guides/b">B</a>' +
+            '<div><button aria-expanded="false" data-folder="more">More</button><div class="kids" hidden></div></div>',
+    more: '<a href="/docs/guides/more/c">C</a>'
+  };
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-folder]');
+    if (!btn) return;
+    btn.setAttribute('aria-expanded', 'true');
+    const kids = btn.nextElementSibling;
+    setTimeout(() => { kids.innerHTML = content[btn.dataset.folder]; kids.hidden = false; }, 20);
+  });
+</script>
+</body></html>

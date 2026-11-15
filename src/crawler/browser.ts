@@ -1,4 +1,4 @@
-import { chromium, Browser, Page } from 'playwright';
+import { chromium, Browser, Page, LaunchOptions } from 'playwright';
 import { logger } from '../utils/logger';
 
 /**
@@ -16,6 +16,19 @@ import { logger } from '../utils/logger';
  * await manager.close();
  * ```
  */
+/**
+ * Chromium launch options. By default Playwright's bundled Chromium is used; set
+ * `DOC_DL_BROWSER_CHANNEL` (e.g. `chrome`) or `DOC_DL_CHROMIUM_PATH` to use an installed browser.
+ */
+export function browserLaunchOptions(env: NodeJS.ProcessEnv = process.env): LaunchOptions {
+  return {
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    ...(env.DOC_DL_BROWSER_CHANNEL ? { channel: env.DOC_DL_BROWSER_CHANNEL } : {}),
+    ...(env.DOC_DL_CHROMIUM_PATH ? { executablePath: env.DOC_DL_CHROMIUM_PATH } : {}),
+  };
+}
+
 export class BrowserManager {
   private browser: Browser | null = null;
 
@@ -28,10 +41,7 @@ export class BrowserManager {
     logger.debug('BROWSER', 'Launching Playwright Chromium browser (headless: true)...');
     const start = Date.now();
     try {
-      this.browser = await chromium.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-      });
+      this.browser = await chromium.launch(browserLaunchOptions());
       const elapsed = Date.now() - start;
       logger.debug('BROWSER', `Chromium launched successfully in ${elapsed}ms (version: ${this.browser.version()})`);
     } catch (err: any) {
