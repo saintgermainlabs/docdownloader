@@ -239,11 +239,11 @@ export function discoverSkillFiles(
 }
 
 /**
- * Downloads agent skills from a GitHub repository into the Obsidian second-brain vault skills folder.
+ * Downloads agent skills from a GitHub repository into a skills folder (default `<knowledge-root>/skills`).
  *
  * @remarks
  * Auto-detects `skills/` folders, single-skill repositories, and sub-trees, downloading all `SKILL.md`
- * definitions and supporting files directly into `<vault>/skills/<skill-name>/`, while recording metadata
+ * definitions and supporting files directly into `<knowledge-root>/skills/<skill-name>/`, while recording metadata
  * in SQLite `./docs.db`.
  *
  * @param options - Configuration options for the skill downloader.

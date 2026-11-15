@@ -108,7 +108,13 @@ ensure_build() {
 
 resolve_vault_path() {
   local target_vault="$1"
-  local vault_path=""
+  local vault_path="${KNOWLEDGE_ROOT:-${OBSIDIAN_VAULT_PATH:-}}"
+  if [[ -n "${vault_path}" ]]; then
+    log_debug "Using configured knowledge root: '${vault_path}'"
+    mkdir -p "${vault_path}"
+    echo "${vault_path}"
+    return
+  fi
 
   if command -v obsidian >/dev/null 2>&1; then
     vault_path="$(obsidian vault="${target_vault}" vault info=path 2>/dev/null | tr -d '\r\n' || true)"
@@ -117,8 +123,6 @@ resolve_vault_path() {
 
   if [[ -z "${vault_path}" || ! -d "${vault_path}" ]]; then
     local candidate_paths=(
-      "/home/god/obsidian-vaults/agent/${target_vault}"
-      "/home/god/obsidian-vaults/${target_vault}"
       "${HOME}/obsidian-vaults/agent/${target_vault}"
       "${HOME}/obsidian-vaults/${target_vault}"
       "${HOME}/Documents/Obsidian/${target_vault}"
@@ -133,10 +137,10 @@ resolve_vault_path() {
   fi
 
   if [[ -z "${vault_path}" || ! -d "${vault_path}" ]]; then
-    if [[ -d "/srv/knowledge" ]]; then
+    if [[ "${HOST_ENV:-}" == "remote" ]]; then
       vault_path="/srv/knowledge"
     else
-      vault_path="${PROJECT_ROOT}/output"
+      vault_path="${PWD}/output"
     fi
     log_debug "Using fallback vault/knowledge path: '${vault_path}'"
   fi

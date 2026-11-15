@@ -302,9 +302,8 @@ USAGE:
 
 ARGUMENTS:
   <url>                 Page URL to open in Playwright and convert
-  [outputDir]           Destination directory (default: knowledge/clippings
-                        — /home/god/projects/knowledge/clippings locally,
-                        /srv/knowledge/clippings when HOST_ENV=remote)
+  [outputDir]           Destination directory (default: <knowledge-root>/clippings,
+                        i.e. ./output/clippings unless KNOWLEDGE_ROOT is set)
 
 OPTIONS:
   --out, -o <dir>       Output directory override
@@ -317,11 +316,11 @@ OPTIONS:
 
 ENVIRONMENT:
   DEBUG=1, DDOCS_DEBUG=1 Enable verbose debug logging
-  HOST_ENV=remote       Use /srv/knowledge as the knowledge root
+  HOST_ENV=remote       Use /srv/knowledge as the knowledge root (unless KNOWLEDGE_ROOT is set)
   KNOWLEDGE_ROOT=<path> Override knowledge root (clippings go to <path>/clippings)
 
 EXAMPLES:
-  npm run clip -- "https://docs.openclaw.ai/plugins/building-plugins"
+  npm run clip -- "https://example.com/blog/some-article"
   npm run clip -- "https://example.com/post" --debug
   HOST_ENV=remote npm run clip -- "https://example.com/post" --title "Example Post"
 `);

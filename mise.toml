@@ -5,8 +5,8 @@ node = "24"
 [env]
 _.path = ["./bin", "./node_modules/.bin"]
 # Debug mode: Set DEBUG = "1" or "true" to print every step, browser event, and link discovery detail
-DEBUG = "1"
-DDOCS_DEBUG = "1"
+# DEBUG = "1"
+# DDOCS_DEBUG = "1"
 
 [tasks.build]
 description = "Build TypeScript compiler output"
@@ -29,7 +29,7 @@ description = "Download GitHub documentation"
 run = "npm run github-docs --"
 
 [tasks.docs_dl]
-description = "User-friendly documentation downloader into Obsidian second-brain"
+description = "User-friendly documentation downloader into an Obsidian vault"
 run = "./bin/docs_dl"
 
 [tasks.ddocs]

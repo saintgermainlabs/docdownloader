@@ -103,7 +103,7 @@ export function parseSkillCliArgs(argv: string[]): SkillCliArgs {
  */
 export function printSkillHelp(): void {
   console.log(`
-${colors.bold('ddocs skill')} - Agent Skill Downloader for Obsidian Vaults & Second Brain
+${colors.bold('ddocs skill')} - Agent Skill Downloader
 
 ${colors.bold('USAGE:')}
   npm run skill -- <repoUrl> [options]
@@ -126,12 +126,12 @@ ${colors.bold('OPTIONS:')}
   --help, -h                    Display this help guide
 
 ${colors.bold('DEFAULT DESTINATIONS:')}
-  Local Obsidian Vault:         /home/god/obsidian-vaults/agent/second-brain/skills/
+  Default:                      ./output/skills/
+  Custom root:                  $KNOWLEDGE_ROOT/skills or $OBSIDIAN_VAULT_PATH/skills
   Remote Environment:           /srv/knowledge/skills/ (when HOST_ENV=remote)
-  Custom Vault Override:        $OBSIDIAN_VAULT_PATH/skills or $KNOWLEDGE_ROOT/skills
 
 ${colors.bold('EXAMPLES:')}
-  # Download all skills from repository into second-brain vault skills folder:
+  # Download all skills from repository into <knowledge-root>/skills:
   npm run skill -- "https://github.com/kepano/obsidian-skills"
 
   # Download specific skill from repository:

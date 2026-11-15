@@ -1,12 +1,47 @@
 {
   "name": "ai-doc-downloader",
   "version": "1.0.0",
+  "description": "Universal documentation downloader: crawls docs sites (incl. JS-rendered SPAs) and GitHub repos into clean Markdown, with a SQLite/Postgres index for resumable crawls.",
+  "keywords": [
+    "documentation",
+    "docs",
+    "crawler",
+    "scraper",
+    "markdown",
+    "playwright",
+    "spa",
+    "github",
+    "offline-docs",
+    "llm",
+    "rag"
+  ],
+  "homepage": "https://github.com/saintgermainlabs/docdownloader#readme",
+  "bugs": {
+    "url": "https://github.com/saintgermainlabs/docdownloader/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/saintgermainlabs/docdownloader.git"
+  },
+  "license": "ISC",
+  "author": "Saint Germain Labs",
   "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
   "bin": {
     "docs_dl": "./bin/docs_dl",
     "ddocs": "./bin/ddocs",
     "docdownloader-clip": "./dist/src/scripts/clip.js",
     "docdownloader-skill": "./dist/src/skills/index.js"
+  },
+  "files": [
+    "dist/src",
+    "bin",
+    "README.md",
+    "GUIDE.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
   },
   "scripts": {
     "build": "tsc",
@@ -20,14 +55,10 @@
     "download-skill": "tsc && node dist/src/skills/index.js",
     "docs:typedoc": "typedoc",
     "docs:sphinx": "typedoc && sphinx-build -b html docs docs/build/sphinx",
-    "docs": "npm run docs:typedoc"
+    "docs": "npm run docs:typedoc",
+    "prepublishOnly": "npm run build"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "A TypeScript-based web crawler that downloads web pages and converts them to Markdown format",
   "dependencies": {
-    "@neon/config": "^1.9.5",
     "better-sqlite3": "^13.0.3",
     "pg": "^8.23.1",
     "playwright": "^1.42.1",
@@ -35,6 +66,7 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
+    "@neon/config": "^1.9.5",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^20.11.24",
     "@types/pg": "^8.23.1",

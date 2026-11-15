@@ -91,7 +91,13 @@ EOF
 # Resolve Obsidian Vault Root Path
 resolve_vault_path() {
   local target_vault="$1"
-  local vault_path=""
+  local vault_path="${KNOWLEDGE_ROOT:-${OBSIDIAN_VAULT_PATH:-}}"
+  if [[ -n "${vault_path}" ]]; then
+    log_debug "Using configured knowledge root: '${vault_path}'"
+    mkdir -p "${vault_path}"
+    echo "${vault_path}"
+    return
+  fi
 
   # 1. Try Obsidian CLI if available
   if command -v obsidian >/dev/null 2>&1; then
@@ -102,8 +108,6 @@ resolve_vault_path() {
   # 2. Fallback to standard path conventions
   if [[ -z "${vault_path}" || ! -d "${vault_path}" ]]; then
     local candidate_paths=(
-      "/home/god/obsidian-vaults/agent/${target_vault}"
-      "/home/god/obsidian-vaults/${target_vault}"
       "${HOME}/obsidian-vaults/agent/${target_vault}"
       "${HOME}/obsidian-vaults/${target_vault}"
       "${HOME}/Documents/Obsidian/${target_vault}"
@@ -119,10 +123,10 @@ resolve_vault_path() {
 
   # 3. Fallback to knowledge base or local output
   if [[ -z "${vault_path}" || ! -d "${vault_path}" ]]; then
-    if [[ -d "/srv/knowledge" ]]; then
+    if [[ "${HOST_ENV:-}" == "remote" ]]; then
       vault_path="/srv/knowledge"
     else
-      vault_path="${PROJECT_ROOT}/output"
+      vault_path="${PWD}/output"
     fi
     log_debug "Using fallback vault/knowledge path: '${vault_path}'"
   fi
@@ -323,8 +327,8 @@ case "$MODE" in
     echo -e "${BOLD}Mode:${RESET}            ${GREEN}GitHub Repository Docs${RESET} -> ${DOCS_DIR}"
     export KNOWLEDGE_ROOT="${VAULT_DIR}"
     
-    GH_ARGS=("$URL" "--outputBaseDir" "${DOCS_DIR}")
-    if [[ -n "$TITLE" ]]; then GH_ARGS+=("--title" "$TITLE"); fi
+    # KNOWLEDGE_ROOT routes output to <vault>/Documents|Documentation/<repo> (or <vault>/awesome/<repo>)
+    GH_ARGS=("$URL")
     
     log_debug "Executing node dist/src/github_docs/index.js ${GH_ARGS[*]} ${EXTRA_ARGS[*]}"
     node "${PROJECT_ROOT}/dist/src/github_docs/index.js" "${GH_ARGS[@]}" "${EXTRA_ARGS[@]}"

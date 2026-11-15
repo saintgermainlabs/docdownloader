@@ -53,7 +53,7 @@ npm run clip -- "<URL>"
 ```
 
 ```bash
-# Local: /home/god/projects/knowledge/clippings/<date>-<slug>.md
+# Default: ./output/clippings/<date>-<slug>.md (or $KNOWLEDGE_ROOT/clippings)
 npm run clip -- "https://docs.openclaw.ai/plugins/building-plugins"
 
 # Remote knowledge tree: /srv/knowledge/clippings/
@@ -102,19 +102,19 @@ npm run import-docs -- --dir=output/coolify --slug=coolify --name="Coolify Docs"
 
 ## 3. Environment Variable Behavior
 
-### `HOST_ENV`
-- `HOST_ENV=remote`: Automatically sets output root to `/srv/knowledge`.
-  - Repositories/Docs (`--type=repo`): `/srv/knowledge/documentation/<slug>/`
-  - Lists (`--type=list`): `/srv/knowledge/awesome/<slug>/`
-  - Clippings (`npm run clip`): `<knowledge-root>/clippings/`
-    (`/home/god/projects/knowledge/clippings` locally, `/srv/knowledge/clippings` when `HOST_ENV=remote`)
-- `HOST_ENV` not set (Local): Docs/lists still use `./output/`; clippings always use the knowledge tree above.
-- `KNOWLEDGE_ROOT`: Optional override for the knowledge root used by clippings.
+No paths are hardcoded. Default output goes to `./output` (relative to the working directory).
 
-Example for remote execution:
-```bash
-HOST_ENV=remote npm run github-docs -- "https://github.com/aliaihub/awesome-hermes-usecases"
-```
+| Variable | Effect |
+|---|---|
+| `KNOWLEDGE_ROOT` | Root for default output: `<root>/Documents/<slug>` (or `<root>/Documentation/<slug>` if that folder exists), `<root>/<listType>/<repo>`, `<root>/clippings`, `<root>/skills` |
+| `OBSIDIAN_VAULT_PATH` | Same as `KNOWLEDGE_ROOT` (used if `KNOWLEDGE_ROOT` is unset) |
+| `HOST_ENV=remote` | Server preset: root `/srv/knowledge`, docs in `/srv/knowledge/documentation/<slug>`, lists in `/srv/knowledge/awesome/<repo>`. `KNOWLEDGE_ROOT` still wins. |
+| `DATABASE_URL` | Use Postgres instead of SQLite `./docs.db` |
+| `GITHUB_TOKEN` / `GH_TOKEN` | Authenticated GitHub API calls (higher rate limit) |
+| `DEBUG` / `DDOCS_DEBUG` | Verbose logging |
+| `OBSIDIAN_VAULT` | Vault *name* used by the `ddocs` / `docs_dl` wrappers to find a vault (default `second-brain`) |
+
+An explicit output directory (positional or `--out`) always wins over these. See `.env.example`.
 
 ---
 
@@ -205,26 +205,19 @@ npm run docs:sphinx
 
 ---
 
-## 8. Hermes Skill Integration (`doc-downloader`)
+## 8. Wrapper CLIs for agent integrations (`ddocs`, `docs_dl`)
 
-The package is packaged as a first-class Hermes skill located at `skills/dev/doc-downloader/SKILL.md` (and registered in `~/.hermes/skills/doc-downloader`).
-
-### Hermes Commands
+The bash wrappers in `bin/` are the easiest surface for agent frameworks (e.g. Hermes, OpenClaw) to call:
 
 ```bash
-# Auto-detect mode and download
-ddocs <url>
-
-# High-concurrency crawl with debug output enabled
-ddocs crawl <url> --debug -c 5
-
-# Clip a single page note into Obsidian second-brain
-ddocs clip <url>
-
-# Check Obsidian vault connection status
-ddocs vault info
+ddocs <url>                       # auto-detect: skills repo / GitHub repo / docs crawl / single-page clip
+ddocs crawl <url> --debug -c 5    # crawl with diagnostics
+ddocs clip <url>                  # single page into <root>/clippings
+ddocs vault info                  # show which knowledge root / Obsidian vault is used
 ```
 
-### Hermes Debugging Instructions
-- If a crawl hangs on dynamic SPAs or unknown links, Hermes should pass `--debug` to inspect the millisecond execution timings, HTTP response codes, and link scope evaluations.
-- When `DEBUG=1` is set in `mise.toml` or passed via CLI, every stage (browser launch, context creation, page navigation, DOM extraction, markdown conversion, disk save, and SQLite indexing) outputs diagnostic logs.
+Root lookup in the wrappers: `KNOWLEDGE_ROOT` → `OBSIDIAN_VAULT_PATH` → `obsidian` CLI (vault named `$OBSIDIAN_VAULT`) → `~/obsidian-vaults/{agent/,}<vault>` → `~/Documents/Obsidian/<vault>` → `/srv/knowledge` if `HOST_ENV=remote` → `$PWD/output`.
+
+### Debugging
+- If a crawl hangs on dynamic SPAs or unknown links, pass `--debug` to see timings, HTTP status codes and link scope decisions.
+- With `DEBUG=1` (env or `mise.toml`) every stage logs: browser launch, navigation, DOM extraction, Markdown conversion, disk save and index writes.

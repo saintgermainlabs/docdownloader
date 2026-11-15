@@ -1,6 +1,12 @@
 import { join } from 'path';
 import { existsSync } from 'fs';
 
+/** Default local output root used when no knowledge root is configured. */
+export const DEFAULT_OUTPUT_ROOT = './output';
+
+/** Default knowledge root used when `HOST_ENV=remote` and no override is set. */
+export const DEFAULT_REMOTE_ROOT = '/srv/knowledge';
+
 /**
  * Checks if the current host environment is set to `'remote'`.
  *
@@ -11,40 +17,45 @@ export function isRemoteEnv(): boolean {
 }
 
 /**
- * Resolves the knowledge-base root directory (Obsidian vault).
+ * Returns the user-configured knowledge root, if any (`KNOWLEDGE_ROOT` or `OBSIDIAN_VAULT_PATH`).
+ */
+function configuredRoot(): string | undefined {
+  return process.env.KNOWLEDGE_ROOT || process.env.OBSIDIAN_VAULT_PATH || undefined;
+}
+
+/**
+ * Resolves the knowledge-base root directory.
  *
  * Priority:
  * 1. `KNOWLEDGE_ROOT` env override
- * 2. `OBSIDIAN_VAULT_PATH` env override
+ * 2. `OBSIDIAN_VAULT_PATH` env override (e.g. an Obsidian vault)
  * 3. `/srv/knowledge` when `HOST_ENV=remote`
- * 4. `/home/god/obsidian-vaults/agent/second-brain` (default Obsidian agent vault)
- * 5. `/home/god/projects/knowledge` fallback
+ * 4. `./output` (relative to the current working directory)
  *
- * @returns Absolute knowledge root path.
+ * @returns Knowledge root path.
  */
 export function resolveKnowledgeRoot(): string {
-  if (process.env.KNOWLEDGE_ROOT) {
-    return process.env.KNOWLEDGE_ROOT;
-  }
-  if (process.env.OBSIDIAN_VAULT_PATH) {
-    return process.env.OBSIDIAN_VAULT_PATH;
+  const configured = configuredRoot();
+  if (configured) {
+    return configured;
   }
   if (isRemoteEnv()) {
-    return '/srv/knowledge';
+    return DEFAULT_REMOTE_ROOT;
   }
-
-  const defaultVaultCandidate = '/home/god/obsidian-vaults/agent/second-brain';
-  if (existsSync(defaultVaultCandidate)) {
-    return defaultVaultCandidate;
-  }
-
-  return '/home/god/projects/knowledge';
+  return DEFAULT_OUTPUT_ROOT;
 }
 
 /**
  * Resolves the base root output directory based on storage type and host environment.
  *
- * @param type - Storage type (`'repo'` for docs, `'list'` for awesome lists, or `'clippings'` for single-page clips).
+ * | type      | HOST_ENV=remote        | KNOWLEDGE_ROOT / OBSIDIAN_VAULT_PATH set     | default                  |
+ * |-----------|------------------------|----------------------------------------------|--------------------------|
+ * | repo      | `<root>/documentation` | `<root>/Documentation` if present, else `<root>/Documents` | `./output`  |
+ * | list      | `<root>/<listType>`    | `<root>/<listType>`                          | `./output/<listType>`    |
+ * | clippings | `<root>/clippings`     | `<root>/clippings`                           | `./output/clippings`     |
+ * | skills    | `<root>/skills`        | `<root>/skills`                              | `./output/skills`        |
+ *
+ * @param type - Storage type (`'repo'` for docs, `'list'` for awesome lists, `'clippings'` or `'skills'`).
  * @param listType - Category directory under list root (default `'awesome'`).
  * @returns Base output directory path string.
  */
@@ -57,69 +68,49 @@ export function resolveBaseOutputDir(
   if (type === 'clippings') {
     return join(root, 'clippings');
   }
-
   if (type === 'skills') {
     return join(root, 'skills');
   }
-
-  if (isRemoteEnv()) {
-    const remoteRoot = '/srv/knowledge';
-    if (type === 'list') {
-      return join(remoteRoot, listType || 'awesome');
-    }
-    return join(remoteRoot, 'documentation');
+  if (type === 'list') {
+    return join(root, listType || 'awesome');
   }
 
-  // When targeting an Obsidian vault or custom knowledge root
-  if (
-    process.env.KNOWLEDGE_ROOT ||
-    process.env.OBSIDIAN_VAULT_PATH ||
-    existsSync('/home/god/obsidian-vaults/agent/second-brain')
-  ) {
-    if (type === 'list') {
-      return join(root, listType || 'awesome');
-    }
+  // type === 'repo'
+  if (configuredRoot()) {
     if (existsSync(join(root, 'Documentation'))) {
       return join(root, 'Documentation');
     }
     return join(root, 'Documents');
   }
-
-  const localRoot = './output';
-  if (type === 'list') {
-    return join(localRoot, listType || 'awesome');
+  if (isRemoteEnv()) {
+    return join(root, 'documentation');
   }
-  return localRoot;
+  return DEFAULT_OUTPUT_ROOT;
+}
+
+/** True when a custom directory was explicitly provided (the default `./output` does not count). */
+function isCustomDir(customDir?: string): customDir is string {
+  return !!customDir && customDir !== DEFAULT_OUTPUT_ROOT && customDir !== 'output';
 }
 
 /**
- * Resolves the destination directory for a single-page clipping.
- *
- * Defaults to `<knowledge-root>/clippings` (local knowledge checkout or `/srv/knowledge/clippings`).
+ * Resolves the destination directory for a single-page clipping (`<knowledge-root>/clippings`).
  *
  * @param customDir - Optional custom output directory override.
- * @returns Absolute or relative clipping output directory.
+ * @returns Clipping output directory.
  */
 export function resolveClippingDir(customDir?: string): string {
-  if (customDir && customDir !== './output' && customDir !== 'output') {
-    return customDir;
-  }
-  return resolveBaseOutputDir('clippings');
+  return isCustomDir(customDir) ? customDir : resolveBaseOutputDir('clippings');
 }
 
 /**
- * Resolves the destination directory for agent skills in the Obsidian second-brain vault or remote knowledge tree.
- *
- * Defaults to `<knowledge-root>/skills` (e.g. `/home/god/obsidian-vaults/agent/second-brain/skills` or `/srv/knowledge/skills`).
+ * Resolves the destination directory for agent skills (`<knowledge-root>/skills`).
  *
  * @param customDir - Optional custom output directory override.
- * @returns Absolute or relative skills output directory.
+ * @returns Skills output directory.
  */
 export function resolveSkillsDir(customDir?: string): string {
-  if (customDir && customDir !== './output' && customDir !== 'output') {
-    return customDir;
-  }
-  return resolveBaseOutputDir('skills');
+  return isCustomDir(customDir) ? customDir : resolveBaseOutputDir('skills');
 }
 
 /**
@@ -137,9 +128,8 @@ export function resolveOutputDir(
   listType: string = 'awesome',
   customDir?: string
 ): string {
-  if (customDir && customDir !== './output' && customDir !== 'output') {
+  if (isCustomDir(customDir)) {
     return customDir;
   }
-  const base = resolveBaseOutputDir(type, listType);
-  return join(base, nameOrSlug);
+  return join(resolveBaseOutputDir(type, listType), nameOrSlug);
 }

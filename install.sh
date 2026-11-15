@@ -10,7 +10,6 @@
 #   DOC_DL_SKIP_BROWSERS=1  skip `npx playwright install chromium`
 set -euo pipefail
 
-# TODO(remote): switch to gitea saintgermainlabs/doc-dl once that repo exists.
 DOC_DL_REPO="${DOC_DL_REPO:-https://github.com/saintgermainlabs/docdownloader.git}"
 DOC_DL_REF="${DOC_DL_REF:-main}"
 DOC_DL_HOME="${DOC_DL_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/doc-dl}"

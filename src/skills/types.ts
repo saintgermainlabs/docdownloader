@@ -12,7 +12,7 @@ export interface SkillDownloadOptions {
   skillName?: string;
   /** Specific subfolder tree inside repository (e.g. `skills` or `skills/defuddle`) */
   tree?: string;
-  /** Custom destination directory (defaults to `<second-brain-vault>/skills`) */
+  /** Custom destination directory (defaults to `<knowledge-root>/skills`) */
   outputDir?: string;
   /** Custom source slug key for SQLite tracking (default: derived from repo or skill name) */
   slug?: string;

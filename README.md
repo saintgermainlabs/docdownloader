@@ -13,17 +13,18 @@ A powerful TypeScript-based web crawler and documentation harvester that downloa
 - **Parallel Worker Concurrency**: Scalable multi-worker concurrency controlled via `--concurrency` / `-c`.
 - **Batch Processing (`npm run process-list`)**: Sequentially crawls a list of documentation URLs defined in `data/pending.yaml` or `data/pending.json`.
 - **Single-page Clipping (`npm run clip`)**: Opens one URL in Playwright and saves cleaned Markdown under `clippings/`.
+- **Agent Skill Downloader (`npm run skill`)**: Installs `SKILL.md`-style agent skills from a GitHub repo into a `skills/` folder.
+- **Portable output layout**: Everything goes to `./output` by default; point it anywhere (e.g. an Obsidian vault) with `KNOWLEDGE_ROOT`.
 - **Automatic GitHub Downloader (`npm run github-docs`)**:
   - Automatically detects `awesome` lists from repository URLs.
   - Fetches `README.md` to the root of the output directory.
   - Auto-discovers target tree folders (`docs`, `usecases`, `categories`) and downloads files into their respective subfolders.
-- **Remote Environment Routing (`HOST_ENV=remote`)**: Routes output automatically to `/srv/knowledge/documentation` or `/srv/knowledge/awesome`.
+- **Postgres option**: Set `DATABASE_URL` to keep the index in Postgres instead of SQLite.
+- **Server preset (`HOST_ENV=remote`)**: Routes output to `/srv/knowledge/documentation` or `/srv/knowledge/awesome`.
 
 ---
 
 ## Install / Update / Uninstall
-
-> Remote: currently `github.com/saintgermainlabs/docdownloader`. **TODO(remote):** move to Gitea `saintgermainlabs/doc-dl` and update the URLs below + `DOC_DL_REPO` default in `install.sh`.
 
 ### Install
 
@@ -49,15 +50,11 @@ curl -fsSL https://raw.githubusercontent.com/saintgermainlabs/docdownloader/main
 
 Removes only launchers it created (marked `# doc-dl-launcher`) and the install dir.
 
-### Helper: second-brain folder docs generator
-
-`scripts/generate-folder-docs.py` regenerates README.md + AGENTS.md for each second-brain folder into a staging dir (edit `SRC`/`DST` at the top).
-
 ## Installation (development)
 
 ```bash
 # Clone the repository
-git clone git@github.com:saintgermainlabs/docdownloader.git
+git clone https://github.com/saintgermainlabs/docdownloader.git
 cd docdownloader
 
 # Install dependencies
@@ -118,8 +115,8 @@ When enabled, the crawler prints detailed timestamped information for:
 # OpenClaw / agents: URL must come after --
 npm run clip -- "https://docs.openclaw.ai/plugins/building-plugins"
 
-# Local: /home/god/projects/knowledge/clippings/<date>-<slug>.md
-npm run clip -- "https://docs.openclaw.ai/plugins/building-plugins"
+# Default: ./output/clippings/<date>-<slug>.md
+npm run clip -- "https://example.com/blog/post" --out ./clippings
 
 # Remote: /srv/knowledge/clippings/
 HOST_ENV=remote npm run clip -- "https://example.com/article" --title "Example Article"
@@ -158,7 +155,28 @@ npm run github-docs -- "https://github.com/aliaihub/awesome-hermes-usecases"
 - Downloads `README.md` to root of output directory.
 - Auto-discovers `docs`, `usecases`, or `categories` folders and downloads all files into their subdirectories.
 
-### 5. Remote Environment Routing (`HOST_ENV=remote`)
+### 5. Choosing where files go
+
+By default everything is written under `./output`:
+
+| Content | Default location |
+|---|---|
+| Crawled docs | `./output/<slug>/` |
+| GitHub repo docs | `./output/<repo>/` (awesome lists: `./output/awesome/<repo>/`) |
+| Clippings | `./output/clippings/` |
+| Skills | `./output/skills/` |
+
+Pass an output directory (positional or `--out`) to choose one explicitly, or set a root for everything:
+
+```bash
+# e.g. an Obsidian vault: docs go to <vault>/Documents/<slug>/ (or Documentation/ if it exists),
+# clippings to <vault>/clippings/, skills to <vault>/skills/
+export KNOWLEDGE_ROOT="$HOME/Notes/MyVault"
+```
+
+`OBSIDIAN_VAULT_PATH` works the same way. See [`.env.example`](.env.example) for all variables and [GUIDE.md](GUIDE.md) for the full resolution rules.
+
+### 6. Server preset (`HOST_ENV=remote`)
 
 Set `HOST_ENV=remote` to automatically direct outputs to `/srv/knowledge`:
 
@@ -221,21 +239,22 @@ npm test
 │   ├── crawler/        # Playwright browser manager, queue, & URL normalizer
 │   ├── converter/      # HTML to Markdown converter
 │   ├── github_docs/    # Automatic GitHub API downloader & tree scanner
-│   ├── scripts/        # Batch processList & importDocs utility scripts
+│   ├── scripts/        # clip, processList & importDocs CLIs
+│   ├── skills/         # Agent skill downloader
 │   ├── storage/        # SQLite database manager & file system storage
 │   └── index.ts        # Main crawler CLI entrypoint
-├── data/               # Pending URL list files (pending.yaml / pending.json)
+├── bin/                # ddocs / docs_dl wrapper CLIs
+├── data/               # Your pending URL lists (pending.yaml, git-ignored)
 ├── dist/               # Compiled JavaScript build output
 ├── test/               # Unit test suites
-├── docs.db             # Unified SQLite database
-├── package.json
-├── tsconfig.json
-├── requirements.txt    # System & package requirements
-└── README.md
+├── docs.db             # SQLite index (created on first run, git-ignored)
+├── GUIDE.md            # In-depth guide
+├── install.sh          # curl | bash installer
+└── package.json
 ```
 
 ---
 
 ## License
 
-ISC License.
+[ISC](LICENSE)

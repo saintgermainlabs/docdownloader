@@ -1,8 +1,0 @@
-# Specific Enhancements & Fixes
-
-1. Clean Markdown content by stripping inline CSS and unnecessary HTML artifacts.
-2. Strip URL fragments (`#hash`) when discovering and normalizing new links.
-3. Remove problematic lines during content processing:
-   - Lines starting with `:root`
-   - Lines starting with `try {`
-   - Lines starting with `{"props":`

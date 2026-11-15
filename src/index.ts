@@ -5,7 +5,7 @@ import { normalizeUrl, isUrlInScope, CrawlScope } from './crawler/urlUtils';
 import { MarkdownConverter } from './converter/markdown';
 import { FileStorage } from './storage/fileSystem';
 import { VisitedDatabase, computeHash, extractDefaultSlug } from './storage/database';
-import { resolveOutputDir, resolveSkillsDir, resolveClippingDir, resolveKnowledgeRoot } from './storage/paths';
+import { resolveOutputDir, resolveSkillsDir, resolveClippingDir, resolveKnowledgeRoot, DEFAULT_OUTPUT_ROOT } from './storage/paths';
 import { logger, isDebugEnabled, setDebugMode, colors } from './utils/logger';
 
 export { downloadSkill } from './skills/downloader';
@@ -126,19 +126,27 @@ export function parseCliArgs(argv: string[]): CliOptions {
     }
   }
 
+  const parseScope = (val: string): CrawlScope | undefined => {
+    const v = val.toLowerCase();
+    if (v === 'website' || v === 'site' || v === 'all' || v === 'whole') return 'website';
+    if (v === 'subfolder' || v === 'sub' || v === 'subpath') return 'subfolder';
+    return undefined;
+  };
+
+  // Positionals: <url> [outputDir] [scope]; a scope keyword may also directly follow the URL.
   if (positionals.length > 0) {
     url = positionals[0];
   }
-  if (positionals.length > 1) {
-    outputDir = positionals[1];
-  }
-  if (positionals.length > 2) {
-    const third = positionals[2].toLowerCase();
-    if (third === 'website' || third === 'site' || third === 'all' || third === 'whole') {
-      scope = 'website';
-    } else if (third === 'subfolder' || third === 'sub' || third === 'subpath') {
-      scope = 'subfolder';
+  for (const extra of positionals.slice(1)) {
+    const asScope = parseScope(extra);
+    if (asScope) {
+      scope = asScope;
+    } else if (!outputDir) {
+      outputDir = extra;
     }
+  }
+  if (!outputDir) {
+    outputDir = DEFAULT_OUTPUT_ROOT;
   }
 
   return { url, outputDir, scope, concurrency, dbPath, force, name, description, slug, help, debug };
@@ -148,7 +156,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
  * Main application entrypoint for executing web documentation crawls.
  *
  * @param startUrl - Initial URL to start crawling from.
- * @param outputDir - Destination directory path (mandatory).
+ * @param outputDir - Destination directory. `./output` (the default) means "auto": `<base>/<slug>` resolved via `resolveOutputDir`.
  * @param scope - Crawl scope constraint (`'subfolder'` or `'website'`).
  * @param concurrency - Number of parallel Playwright browser workers.
  * @param dbPath - SQLite database tracking path (default: `./docs.db`).
@@ -160,7 +168,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
  */
 export async function main(
   startUrl: string,
-  outputDir: string,
+  outputDir: string = DEFAULT_OUTPUT_ROOT,
   scope: CrawlScope = 'subfolder',
   concurrency: number = 1,
   dbPath?: string,
@@ -172,9 +180,6 @@ export async function main(
 ): Promise<void> {
   if (!startUrl) {
     throw new Error('Missing required positional argument: startUrl');
-  }
-  if (!outputDir) {
-    throw new Error('Missing required positional argument: outputDir');
   }
 
   if (debug !== undefined) {
@@ -410,13 +415,14 @@ export function printMainCliHelp(): void {
 ai-doc-downloader - TypeScript Web Documentation Harvester
 
 USAGE:
-  ddocs crawl <url> <outputDir> [scope] [options]
-  npm start -- <url> <outputDir> [scope] [options]
-  node dist/src/index.js <url> <outputDir> [scope] [options]
+  ddocs crawl <url> [outputDir] [scope] [options]
+  npm start -- <url> [outputDir] [scope] [options]
+  node dist/src/index.js <url> [outputDir] [scope] [options]
 
 ARGUMENTS:
   <url>                         (Mandatory) Base seed URL to crawl (e.g. https://docs.openclaw.ai/)
-  <outputDir>                   (Mandatory) Directory to save Markdown files (e.g. ./output or Documents/)
+  [outputDir]                   (Optional) Directory to save Markdown files. Default: <knowledge-root>/<slug>
+                                (./output/<slug> unless KNOWLEDGE_ROOT / HOST_ENV is set)
   [scope]                       (Optional) Crawl scope: 'subfolder' or 'website' (default: subfolder)
 
 OPTIONS:
@@ -434,7 +440,9 @@ OPTIONS:
 
 ENVIRONMENT VARIABLES:
   DEBUG=1, DDOCS_DEBUG=1        Enable verbose debug logging across all steps
-  HOST_ENV=remote               Routes output directory to /srv/knowledge/documentation/<slug>/
+  KNOWLEDGE_ROOT=<path>         Root for default output (<path>/Documents/<slug>)
+  HOST_ENV=remote               Routes default output to /srv/knowledge/documentation/<slug>/
+  DATABASE_URL=<postgres-url>   Use Postgres instead of SQLite for the index
 
 EXAMPLES:
   # Crawl subfolder documentation with 5 parallel workers:
@@ -454,15 +462,10 @@ EXAMPLES:
 if (require.main === module) {
   const options = parseCliArgs(process.argv.slice(2));
 
-  if (options.help || !options.url || !options.outputDir) {
+  if (options.help || !options.url) {
     printMainCliHelp();
-    if ((!options.url || !options.outputDir) && !options.help) {
-      if (!options.url) {
-        logger.error('CLI', 'Missing mandatory <url> positional argument.');
-      }
-      if (!options.outputDir) {
-        logger.error('CLI', 'Missing mandatory <outputDir> positional argument.');
-      }
+    if (!options.help) {
+      logger.error('CLI', 'Missing mandatory <url> positional argument.');
       process.exit(1);
     }
     process.exit(0);

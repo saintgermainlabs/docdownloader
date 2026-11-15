@@ -21,25 +21,27 @@ describe('paths module', () => {
     }
   });
 
-  test('resolves local Obsidian vault paths by default', () => {
+  test('defaults to ./output when no knowledge root is configured', () => {
     delete process.env.HOST_ENV;
     delete process.env.KNOWLEDGE_ROOT;
     delete process.env.OBSIDIAN_VAULT_PATH;
 
-    const root = resolveKnowledgeRoot();
-    assert.ok(
-      root === '/home/god/obsidian-vaults/agent/second-brain' ||
-      root === '/home/god/projects/knowledge'
-    );
-    assert.strictEqual(resolveBaseOutputDir('clippings'), `${root}/clippings`);
-    assert.strictEqual(resolveClippingDir(), `${root}/clippings`);
-    assert.strictEqual(resolveBaseOutputDir('skills'), `${root}/skills`);
-    assert.strictEqual(resolveSkillsDir(), `${root}/skills`);
-    assert.ok(
-      resolveBaseOutputDir('repo').endsWith('Documentation') ||
-      resolveBaseOutputDir('repo').endsWith('Documents') ||
-      resolveBaseOutputDir('repo') === './output'
-    );
+    assert.strictEqual(resolveKnowledgeRoot(), './output');
+    assert.strictEqual(resolveBaseOutputDir('repo'), './output');
+    assert.strictEqual(resolveBaseOutputDir('list', 'awesome'), 'output/awesome');
+    assert.strictEqual(resolveBaseOutputDir('clippings'), 'output/clippings');
+    assert.strictEqual(resolveClippingDir(), 'output/clippings');
+    assert.strictEqual(resolveBaseOutputDir('skills'), 'output/skills');
+    assert.strictEqual(resolveSkillsDir(), 'output/skills');
+    assert.strictEqual(resolveOutputDir('react', 'repo'), 'output/react');
+  });
+
+  test('KNOWLEDGE_ROOT wins over HOST_ENV=remote', () => {
+    process.env.HOST_ENV = 'remote';
+    process.env.KNOWLEDGE_ROOT = '/tmp/kb-test';
+    assert.strictEqual(resolveKnowledgeRoot(), '/tmp/kb-test');
+    assert.strictEqual(resolveClippingDir(), '/tmp/kb-test/clippings');
+    assert.strictEqual(resolveBaseOutputDir('repo'), '/tmp/kb-test/Documents');
   });
 
   test('resolves remote output paths when HOST_ENV=remote', () => {
