@@ -1,7 +1,7 @@
 import assert from 'node:assert';
 import { test, describe } from 'node:test';
-import { parseDetectArgs, formatReport, runDetect } from '../src/cli/detect';
-import { Finding, Probe } from '../src/sources/types';
+import { parseDetectArgs, formatReport, runDetect, selectRunnable } from '../src/cli/detect';
+import { Finding, Probe, SourceHandler, RunOptions } from '../src/sources/types';
 
 const probe: Probe = {
   url: 'https://langfuse.com/docs',
@@ -93,5 +93,88 @@ describe('runDetect', () => {
     const c = capture();
     assert.strictEqual(await runDetect([], { out: c.out }), 1);
     assert.match(c.text(), /USAGE/);
+  });
+});
+
+
+describe('--run', () => {
+  const docs = f({ handler: 'documents', kind: 'documents', confidence: 0.95, summary: '3 files — need Docling conversion', command: '', runnable: false });
+  const site = f({});
+  const info = f({ handler: 'site-index', kind: 'llms-txt', runnable: false, command: '' });
+  const gh = (kind: any, runnable = kind !== 'wiki') => f({ handler: 'github', kind, url: 'https://github.com/o/r', confidence: 0.95, runnable });
+
+  function fakeHandlers(seen: Array<{ kind: string; opts: RunOptions }>) {
+    const h: SourceHandler = {
+      id: 'x',
+      detect: async () => [],
+      run: async (finding, opts) => {
+        seen.push({ kind: finding.kind, opts });
+        return { outputDir: '/tmp/out', filesWritten: 2, warnings: [] };
+      },
+    };
+    return () => h;
+  }
+
+  test('selectRunnable skips non-runnable top finding', () => {
+    assert.deepStrictEqual(selectRunnable([docs, site]), [site]);
+  });
+
+  test('selectRunnable returns all GitHub sets, filtered by --only', () => {
+    const all = [gh('doc-folder'), gh('readme'), gh('skills'), gh('wiki')];
+    assert.deepStrictEqual(selectRunnable(all).map((x) => x.kind), ['doc-folder', 'readme', 'skills']);
+    assert.deepStrictEqual(selectRunnable(all, ['skills']).map((x) => x.kind), ['skills']);
+  });
+
+  test('runs the best runnable finding and says why the top one was skipped', async () => {
+    const seen: Array<{ kind: string; opts: RunOptions }> = [];
+    const c = capture();
+    const code = await runDetect(['https://langfuse.com/docs', '--run'], {
+      probe: async () => probe,
+      detect: async () => [docs, site],
+      handler: fakeHandlers(seen),
+      out: c.out,
+    });
+    assert.strictEqual(code, 0);
+    assert.deepStrictEqual(seen.map((s) => s.kind), ['docs-site']);
+    assert.match(c.text(), /needs Docling/);
+  });
+
+  test('nothing runnable exits 2', async () => {
+    const c = capture();
+    const code = await runDetect(['https://x.test', '--run'], {
+      probe: async () => probe,
+      detect: async () => [info],
+      handler: fakeHandlers([]),
+      out: c.out,
+    });
+    assert.strictEqual(code, 2);
+  });
+
+  test('passthrough options reach the handler', async () => {
+    const seen: Array<{ kind: string; opts: RunOptions }> = [];
+    await runDetect(['https://langfuse.com/docs', '--run', '-c', '5', '--force', '--layout', 'url', '-o', './o', '--db', './d.db'], {
+      probe: async () => probe,
+      detect: async () => [site],
+      handler: fakeHandlers(seen),
+      out: () => undefined,
+    });
+    assert.strictEqual(seen[0].opts.concurrency, 5);
+    assert.strictEqual(seen[0].opts.force, true);
+    assert.strictEqual(seen[0].opts.layout, 'url');
+    assert.strictEqual(seen[0].opts.outputDir, './o');
+    assert.strictEqual(seen[0].opts.dbPath, './d.db');
+  });
+
+  test('a failing run exits 1', async () => {
+    const c = capture();
+    const failing: SourceHandler = { id: 'x', detect: async () => [], run: async () => { throw new Error('boom'); } };
+    const code = await runDetect(['https://langfuse.com/docs', '--run'], {
+      probe: async () => probe,
+      detect: async () => [site],
+      handler: () => failing,
+      out: c.out,
+    });
+    assert.strictEqual(code, 1);
+    assert.match(c.text(), /boom/);
   });
 });

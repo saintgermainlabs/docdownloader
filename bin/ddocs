@@ -100,7 +100,7 @@ EOF
 }
 
 ensure_build() {
-  if [[ ! -f "${PROJECT_ROOT}/dist/src/index.js" || ! -f "${PROJECT_ROOT}/dist/src/utils/logger.js" ]]; then
+  if [[ ! -f "${PROJECT_ROOT}/dist/src/index.js" || ! -f "${PROJECT_ROOT}/dist/src/utils/logger.js" || ! -f "${PROJECT_ROOT}/dist/src/cli/detect.js" ]]; then
     log_debug "Building TypeScript modules (dist is missing)..."
     echo -e "${BLUE}ℹ Compiling TypeScript...${RESET}"
     (cd "${PROJECT_ROOT}" && npm run build --silent)

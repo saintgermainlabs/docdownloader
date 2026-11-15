@@ -67,11 +67,10 @@ ${BOLD}OPTIONS:${RESET}
   ${BOLD}-o, --open${RESET}            Open downloaded file/folder in Obsidian when done
   ${BOLD}-h, --help${RESET}            Show this help message
 
-${BOLD}AUTO-DETECTION RULES:${RESET}
-  1. ${BOLD}Skills Repository${RESET} (e.g. obsidian-skills) -> Downloads skills into ${BOLD}skills/<name>/${RESET}
-  2. ${BOLD}GitHub URLs${RESET} (github.com/...) -> Downloads repository README & docs into ${BOLD}Documents/<repo>${RESET}
-  3. ${BOLD}Explicit --clip${RESET} or single article/blog -> Saves clipping with frontmatter into ${BOLD}clippings/<date>-<title>.md${RESET}
-  4. ${BOLD}Doc sites / Crawl${RESET} (e.g. /docs) -> Recursively crawls and converts into ${BOLD}Documents/<slug>/${RESET}
+${BOLD}AUTO-DETECTION:${RESET}
+  Without a mode flag, runs ${BOLD}doc-dl detect <URL> --run${RESET}: probes the URL (GitHub repo, DeepWiki,
+  docs site + sidebar tree, single page) and runs the recommended workflow.
+  Preview without downloading: ${BOLD}ddocs detect <URL>${RESET}
 
 ${BOLD}DEBUG MODE CONFIGURATION:${RESET}
   Set ${BOLD}DEBUG = "1"${RESET} in ${BOLD}mise.toml${RESET} or pass ${BOLD}--debug${RESET} to enable deep diagnostics.
@@ -136,7 +135,7 @@ resolve_vault_path() {
 
 # Ensure TypeScript build is up to date
 ensure_build() {
-  if [[ ! -f "${PROJECT_ROOT}/dist/src/index.js" || ! -f "${PROJECT_ROOT}/dist/src/scripts/clip.js" || ! -f "${PROJECT_ROOT}/dist/src/utils/logger.js" ]]; then
+  if [[ ! -f "${PROJECT_ROOT}/dist/src/index.js" || ! -f "${PROJECT_ROOT}/dist/src/scripts/clip.js" || ! -f "${PROJECT_ROOT}/dist/src/utils/logger.js" || ! -f "${PROJECT_ROOT}/dist/src/cli/detect.js" ]]; then
     log_debug "Compiling TypeScript modules (dist missing)..."
     echo -e "${BLUE}ℹ Building TypeScript modules...${RESET}"
     (cd "${PROJECT_ROOT}" && npm run build --silent)
@@ -292,18 +291,14 @@ if [[ "$IS_DEBUG" == true ]]; then
   echo -e "${BOLD}Debug Mode:${RESET}      ${MAGENTA}ENABLED${RESET}"
 fi
 
-# Determine mode if auto
+# Auto mode: let `detect` work out what the URL offers and run the recommended workflow
 if [[ "$MODE" == "auto" ]]; then
-  if [[ "$URL" =~ (skills|skill|agent-skills) ]] && [[ "$URL" =~ github\.com/ ]]; then
-    MODE="skill"
-  elif [[ "$URL" =~ ^https?://(www\.)?github\.com/ ]]; then
-    MODE="gh"
-  elif [[ "$URL" =~ /docs(/|$|\?) ]] || [[ "$URL" =~ /documentation(/|$|\?) ]] || [[ "$URL" =~ /guide(/|$|\?) ]] || [[ "$URL" =~ /manual(/|$|\?) ]]; then
-    MODE="crawl"
-  else
-    # Default single page to clip
-    MODE="clip"
-  fi
+  export KNOWLEDGE_ROOT="${VAULT_DIR}"
+  DETECT_ARGS=("$URL" "--run" "--concurrency" "${CONCURRENCY}")
+  if [[ "$FORCE" == true ]]; then DETECT_ARGS+=("--force"); fi
+  echo -e "${BOLD}Mode:${RESET}            ${GREEN}Auto-detect${RESET} (doc-dl detect --run)"
+  log_debug "Executing node dist/src/cli/detect.js ${DETECT_ARGS[*]} ${EXTRA_ARGS[*]}"
+  exec node "${PROJECT_ROOT}/dist/src/cli/detect.js" "${DETECT_ARGS[@]}" "${EXTRA_ARGS[@]}"
 fi
 
 log_debug "Selected Mode: ${MODE}"

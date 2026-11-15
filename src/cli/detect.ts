@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { probeUrl } from '../sources/probe';
-import { detectAll } from '../sources/registry';
+import { detectAll, getHandler } from '../sources/registry';
 import { registerBuiltinHandlers } from '../sources/handlers';
-import { Finding, Probe } from '../sources/types';
+import { Finding, Probe, RunOptions, SourceHandler } from '../sources/types';
 
 /** Parsed `detect` arguments. */
 export interface DetectArgs {
@@ -34,6 +34,40 @@ export function parseDetectArgs(argv: string[]): DetectArgs {
     else args.passthrough.push(a);
   }
   return args;
+}
+
+/**
+ * Picks what `--run` executes: the best runnable finding; for a GitHub repo, every runnable
+ * documentation set. `only` restricts the kinds considered.
+ */
+export function selectRunnable(findings: Finding[], only?: string[]): Finding[] {
+  const runnable = findings.filter((f) => f.runnable && (!only || only.includes(f.kind)));
+  const top = runnable[0];
+  if (!top) return [];
+  return top.handler === 'github' ? runnable.filter((f) => f.handler === 'github') : [top];
+}
+
+/** Maps passthrough arguments (`-c 5 --force -o dir --db x`) to handler run options. */
+export function parseRunOptions(args: DetectArgs): RunOptions {
+  const opts: RunOptions = { layout: args.layout, only: args.only };
+  const p = args.passthrough;
+  for (let i = 0; i < p.length; i++) {
+    const a = p[i];
+    const [flag, inline] = a.includes('=') ? [a.slice(0, a.indexOf('=')), a.slice(a.indexOf('=') + 1)] : [a, undefined];
+    const value = () => inline ?? p[++i];
+    if (flag === '-c' || flag === '--concurrency') {
+      const n = parseInt(value(), 10);
+      if (n > 0) opts.concurrency = n;
+    } else if (flag === '-f' || flag === '--force') opts.force = true;
+    else if (flag === '-d' || flag === '--debug') opts.debug = true;
+    else if (flag === '-o' || flag === '--out' || flag === '--output') opts.outputDir = value();
+    else if (flag === '--db') opts.dbPath = value();
+    else if (flag === '--layout') {
+      const v = value();
+      if (v === 'nav' || v === 'url') opts.layout = v;
+    }
+  }
+  return opts;
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -86,6 +120,8 @@ export interface DetectDeps {
   probe?: (url: string) => Promise<Probe>;
   detect?: (probe: Probe) => Promise<Finding[]>;
   out?: (text: string) => void;
+  /** Handler lookup for `--run` (default: the registry). */
+  handler?: (id: string) => SourceHandler | undefined;
 }
 
 /**
@@ -123,7 +159,39 @@ export async function runDetect(argv: string[], deps: DetectDeps = {}): Promise<
   const findings = await detectFn(probe);
 
   out(args.json ? JSON.stringify({ url: probe.finalUrl, findings }, null, 2) : formatReport(probe, findings));
-  return 0;
+  if (!args.run) return 0;
+
+  const selected = selectRunnable(findings, args.only);
+  if (!selected.length) {
+    out('Nothing runnable was found for this URL.');
+    return 2;
+  }
+  const top = findings.find((f) => !args.only || args.only.includes(f.kind));
+  if (top && !top.runnable && top.kind === 'documents') {
+    out(`Top finding (${top.kind}) needs Docling conversion, which is not supported yet; running ${selected[0].kind} instead.`);
+  }
+
+  const lookup = deps.handler ?? getHandler;
+  const opts = parseRunOptions(args);
+  let failed = false;
+  for (const finding of selected) {
+    const handler = lookup(finding.handler);
+    if (!handler?.run) {
+      out(`✖ ${finding.kind}: handler ${finding.handler} cannot run`);
+      failed = true;
+      continue;
+    }
+    out(`\n▶ Running ${finding.kind}: ${finding.url}`);
+    try {
+      const res = await handler.run(finding, opts);
+      out(`✔ ${finding.kind}: ${res.filesWritten} file(s) → ${res.outputDir}`);
+      for (const w of res.warnings) out(`  ! ${w}`);
+    } catch (error: any) {
+      out(`✖ ${finding.kind}: ${error?.message ?? error}`);
+      failed = true;
+    }
+  }
+  return failed ? 1 : 0;
 }
 
 if (require.main === module) {
