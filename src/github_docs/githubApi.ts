@@ -85,7 +85,10 @@ export function parseGithubUrl(urlStr: string): GithubRepoUrlInfo {
  * @param repo - Repository name.
  * @returns Promise resolving to default branch and description.
  */
-export async function fetchRepoMetadata(owner: string, repo: string): Promise<{ defaultBranch: string; description: string }> {
+export async function fetchRepoMetadata(
+  owner: string,
+  repo: string
+): Promise<{ defaultBranch: string; description: string; homepage?: string }> {
   try {
     const res = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
       headers: getGithubHeaders()
@@ -94,7 +97,8 @@ export async function fetchRepoMetadata(owner: string, repo: string): Promise<{ 
       const data = (await res.json()) as any;
       return {
         defaultBranch: data.default_branch || 'main',
-        description: data.description || `${repo} repository`
+        description: data.description || `${repo} repository`,
+        homepage: data.homepage || undefined
       };
     }
   } catch {
@@ -256,4 +260,51 @@ export async function fetchRepoRootDirectories(owner: string, repo: string, bran
     // ignore
   }
   return [];
+}
+
+/**
+ * Converts a Git Trees API response into file entries plus the API's `truncated` flag.
+ */
+export function parseGitTreeResponse(
+  data: any,
+  owner: string,
+  repo: string,
+  ref: string
+): { files: GithubFileEntry[]; truncated: boolean } {
+  const files: GithubFileEntry[] = [];
+  for (const item of Array.isArray(data?.tree) ? data.tree : []) {
+    if (item.type !== 'blob') continue;
+    files.push({
+      name: item.path.split('/').pop() || item.path,
+      path: item.path,
+      downloadUrl: `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${item.path}`,
+      type: 'file'
+    });
+  }
+  return { files, truncated: !!data?.truncated };
+}
+
+/**
+ * Fetches the whole repository tree in one call, reporting whether GitHub truncated it.
+ *
+ * @throws Error `GitHub API <status>: <message>` on HTTP errors (e.g. 403 rate limit).
+ */
+export async function fetchGitTreeWithMeta(
+  owner: string,
+  repo: string,
+  ref: string
+): Promise<{ files: GithubFileEntry[]; truncated: boolean }> {
+  const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${ref}?recursive=1`, {
+    headers: getGithubHeaders()
+  });
+  if (!res.ok) {
+    let message = res.statusText;
+    try {
+      message = ((await res.json()) as any).message || message;
+    } catch {
+      // keep status text
+    }
+    throw new Error(`GitHub API ${res.status}: ${message}`);
+  }
+  return parseGitTreeResponse(await res.json(), owner, repo, ref);
 }

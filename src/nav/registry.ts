@@ -29,6 +29,12 @@ export function registerExtractor(extractor: NavExtractor): void {
   }
 }
 
+/** Returns a registered extractor by id (built-ins are loaded on first use). */
+export function getExtractor(id: string): NavExtractor | undefined {
+  ensureBuiltins();
+  return extractors.find((e) => e.id === id);
+}
+
 /** Lists registered extractors in order. */
 export function listExtractors(): readonly NavExtractor[] {
   return extractors;

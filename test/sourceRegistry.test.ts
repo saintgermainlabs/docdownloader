@@ -69,11 +69,11 @@ describe('source registry', () => {
     assert.strictEqual(findings[0].confidence, 0.1);
   });
 
-  test('templates win ties against generic handlers', async () => {
+  test('templates that find nothing leave generic findings alone', async () => {
     registerHandler(fixed('generic', 0.9));
-    registerHandler(fixed('template', 0.9), { template: true });
+    registerHandler({ id: 'template', detect: async () => [] }, { template: true });
     const findings = await detectAll(probe());
-    assert.strictEqual(findings[0].handler, 'template');
+    assert.strictEqual(findings[0].handler, 'generic');
     assert.ok(getHandler('generic'));
   });
 
@@ -82,6 +82,13 @@ describe('source registry', () => {
     registerHandler({ id: 'boom', detect: async () => { throw new Error('boom'); } });
     const findings = await detectAll(probe());
     assert.strictEqual(findings[0].kind, 'page');
+  });
+
+  test('when a template claims the URL, generic findings are dropped', async () => {
+    registerHandler(fixed('generic', 0.9));
+    registerHandler(fixed('template', 0.95), { template: true });
+    const findings = await detectAll(probe());
+    assert.deepStrictEqual(findings.map((f) => f.handler), ['template']);
   });
 
   test('needsBrowser triggers exactly one render', async () => {

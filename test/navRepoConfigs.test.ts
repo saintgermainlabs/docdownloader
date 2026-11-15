@@ -28,6 +28,23 @@ describe('mkdocs reader', () => {
     ]);
   });
 
+  test('a folder entry becomes a folder of its docs', async () => {
+    const files = new Map([
+      ['mkdocs.yml', 'nav:\n  - User Guide: user-guide/\n'],
+      ['docs/user-guide/index.md', ''],
+      ['docs/user-guide/writing.md', ''],
+      ['docs/user-guide/configuration.md', ''],
+      ['docs/user-guide/img/x.png', ''],
+    ]);
+    const nodes = await mkdocsExtractor.extract({ url: REPO, repoFiles: files, configPath: 'mkdocs.yml' });
+    assert.deepStrictEqual(simplify(nodes), [
+      ['folder', 'User Guide', 'docs/user-guide/index.md', [
+        ['link', 'configuration', 'docs/user-guide/configuration.md'],
+        ['link', 'writing', 'docs/user-guide/writing.md'],
+      ]],
+    ]);
+  });
+
   test('honours docs_dir and a nested config folder', async () => {
     const files = new Map([['site/mkdocs.yml', 'docs_dir: content\nnav:\n  - Home: index.md\n']]);
     const nodes = await mkdocsExtractor.extract({ url: REPO, repoFiles: files, configPath: 'site/mkdocs.yml' });
@@ -112,6 +129,13 @@ describe('findNavConfigs', () => {
     assert.deepStrictEqual(findNavConfigs(['content/docs/meta.json', 'content/docs/a/meta.json']), [
       { extractor: 'fumadocs-meta', configPath: 'content/docs/meta.json', root: 'content/docs' },
     ]);
+  });
+
+  test('ignores configs inside test and fixture folders', () => {
+    assert.deepStrictEqual(
+      findNavConfigs(['pkg/tests/integration/x/mkdocs.yml', 'src/__tests__/SUMMARY.md', 'testdata/sidebars.js', 'fixtures/meta.json']),
+      []
+    );
   });
 
   test('ignores node_modules', () => {

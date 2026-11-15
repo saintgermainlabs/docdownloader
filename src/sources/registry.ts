@@ -44,8 +44,11 @@ export async function detectAll(probe: Probe): Promise<Finding[]> {
       }
     })
   );
-  return results
-    .flat()
+  // A template that recognises the URL owns it: drop generic findings (e.g. GitHub's own website).
+  const all = results.flat();
+  const claimed = all.some((r) => r.entry.template);
+  return all
+    .filter((r) => !claimed || r.entry.template)
     .sort(
       (a, b) =>
         b.finding.confidence - a.finding.confidence ||

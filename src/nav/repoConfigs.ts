@@ -8,6 +8,9 @@ export interface NavConfigRef {
   root: string;
 }
 
+/** Paths inside test/fixture folders hold sample configs, not the project's docs. */
+const TEST_DIR = /(^|\/)(tests?|__tests__|fixtures?|testdata|test-fixtures)\//i;
+
 const PATTERNS: Array<[NavConfigRef['extractor'], RegExp]> = [
   ['mkdocs', /(^|\/)mkdocs\.ya?ml$/],
   ['summary-md', /(^|\/)SUMMARY\.md$/],
@@ -25,7 +28,7 @@ export function findNavConfigs(paths: string[]): NavConfigRef[] {
     paths.filter((p) => /(^|\/)meta\.json$/.test(p)).map((p) => posix.dirname(p))
   );
   for (const p of paths) {
-    if (p.includes('node_modules/') || p.startsWith('.')) continue;
+    if (p.includes('node_modules/') || p.startsWith('.') || TEST_DIR.test(p)) continue;
     for (const [extractor, re] of PATTERNS) {
       if (!re.test(p)) continue;
       const root = posix.dirname(p) === '.' ? '' : posix.dirname(p);
