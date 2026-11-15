@@ -1,0 +1,41 @@
+Available pages for mkdocs/mkdocs:
+
+- 1 Overview
+  - 1.1 Architecture
+  - 1.2 Core Concepts
+- 2 Configuration System
+  - 2.1 Loading and Validation
+  - 2.2 Configuration Options
+  - 2.3 MkDocsConfig Schema
+- 3 Build System
+  - 3.1 Build Pipeline
+  - 3.2 File Discovery and Management
+  - 3.3 Page Processing
+  - 3.4 Navigation Builder
+- 4 Command Line Interface
+  - 4.1 CLI Architecture
+  - 4.2 Build Command
+  - 4.3 Serve Command
+  - 4.4 Deploy Command
+  - 4.5 Other Commands
+- 5 Theme System
+  - 5.1 Theme Architecture
+  - 5.2 Built-in Themes
+  - 5.3 Template System
+  - 5.4 Theme Assets
+  - 5.5 Localization and Translation
+  - 5.6 Customizing Themes
+- 6 Plugin System
+  - 6.1 Plugin Architecture
+  - 6.2 Event System
+  - 6.3 Built-in Plugins
+  - 6.4 Creating Plugins
+- 7 Utilities and Supporting Systems
+  - 7.1 Utilities Module
+  - 7.2 Exception Handling
+  - 7.3 Caching System
+- 8 Development Guide
+  - 8.1 Project Structure and Build System
+  - 8.2 CI/CD Pipeline
+  - 8.3 Testing
+  - 8.4 Contributing
