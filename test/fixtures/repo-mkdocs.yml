@@ -1,0 +1,7 @@
+site_name: Example
+nav:
+  - Home: index.md
+  - Guide:
+      - Install: guide/install.md
+      - guide/usage.md
+  - GitHub: https://github.com/example/example

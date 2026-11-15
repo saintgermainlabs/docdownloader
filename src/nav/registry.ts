@@ -9,6 +9,8 @@ export interface ExtractInput {
   url: string;
   /** Repo path → file content, for extractors that read sidebar config files. */
   repoFiles?: Map<string, string>;
+  /** Repo path of the sidebar config to read, when a repo has several. */
+  configPath?: string;
 }
 
 /** Turns a page or repo config into a sidebar tree. */
