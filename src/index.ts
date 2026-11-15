@@ -14,6 +14,17 @@ import { planLayout, buildTreeJson } from './nav/layout';
 import { matchPlannedPath, unlistedPath, shouldSavePage, relocateIfMoved } from './nav/crawlLayout';
 import { LayoutPlan } from './nav/types';
 
+/** Totals returned by {@link main}. */
+export interface CrawlSummary {
+  outputDir: string;
+  processed: number;
+  downloaded: number;
+  skipped: number;
+  httpErrors: number;
+  errors: number;
+  warnings: string[];
+}
+
 /** How crawled pages are laid out on disk: by sidebar tree (`nav`) or by URL path (`url`). */
 export type CrawlLayout = 'nav' | 'url';
 
@@ -197,7 +208,7 @@ export async function main(
   slug?: string,
   debug?: boolean,
   layout: CrawlLayout = 'nav'
-): Promise<void> {
+): Promise<CrawlSummary> {
   if (!startUrl) {
     throw new Error('Missing required positional argument: startUrl');
   }
@@ -253,6 +264,7 @@ export async function main(
   queue.add(initialUrl);
   logger.debug('QUEUE', `Enqueued initial seed URL: ${initialUrl} (Queue length: ${queue.size})`);
 
+  const warnings: string[] = [];
   let navPlan: LayoutPlan | undefined;
   let navFramework = '';
   if (layout === 'nav') {
@@ -263,6 +275,7 @@ export async function main(
       logger.step('NAV', `Sidebar tree found (${navFramework}): ${navPlan.paths.size} page(s) planned`);
     } else {
       logger.warn('NAV', 'no sidebar tree found; using URL layout');
+      warnings.push('no sidebar tree found; using URL layout');
     }
   }
 
@@ -471,6 +484,15 @@ export async function main(
     logger.info(`Output Directory: ${finalOutputDir}`);
     logger.info(`SQLite Database:  ${finalDbPath}`);
   }
+  return {
+    outputDir: finalOutputDir,
+    processed: totalProcessed,
+    downloaded: totalDownloaded,
+    skipped: totalSkipped,
+    httpErrors: totalHttpErrors,
+    errors: totalErrors,
+    warnings,
+  };
 }
 
 /**
