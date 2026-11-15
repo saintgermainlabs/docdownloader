@@ -58,7 +58,8 @@
     "docs:sphinx": "typedoc && sphinx-build -b html docs docs/build/sphinx",
     "docs": "npm run docs:typedoc",
     "prepublishOnly": "npm run build",
-    "detect": "tsc && node dist/src/cli/detect.js"
+    "detect": "tsc && node dist/src/cli/detect.js",
+    "test:live": "DOC_DL_LIVE_TESTS=1 npm test"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

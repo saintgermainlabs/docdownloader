@@ -23,6 +23,19 @@ This guide provides instructions and technical specs for AI agents operating, co
 
 All commands require TypeScript compilation (`npm run build` or `npm test`).
 
+### 2.0 Detect first (`npm run detect`)
+
+```bash
+# What documentation does this URL offer, and how is it downloaded?
+npm run detect -- "<URL>" --json
+
+# Run the recommended workflow (all doc sets for GitHub repos)
+npm run detect -- "<URL>" --run -c 5
+npm run detect -- "<URL>" --run --only doc-folder,readme
+```
+
+JSON shape: `{ url, findings: [{ handler, kind, url, confidence, summary, command, runnable, details }] }`. Exit codes: `0` ok, `1` unreachable/invalid/run failed, `2` nothing runnable.
+
 ### 2.1 Web Crawler (`npm start`)
 
 ```bash
@@ -112,6 +125,8 @@ No paths are hardcoded. Default output goes to `./output` (relative to the worki
 | `DATABASE_URL` | Use Postgres instead of SQLite `./docs.db` |
 | `GITHUB_TOKEN` / `GH_TOKEN` | Authenticated GitHub API calls (higher rate limit) |
 | `DEBUG` / `DDOCS_DEBUG` | Verbose logging |
+| `DOC_DL_BROWSER_CHANNEL` / `DOC_DL_CHROMIUM_PATH` | Use an installed browser (e.g. `chrome`) instead of Playwright's bundled Chromium |
+| `DOC_DL_LIVE_TESTS=1` | Enable live-network/browser tests |
 | `OBSIDIAN_VAULT` | Vault *name* used by the `ddocs` / `docs_dl` wrappers to find a vault (default `second-brain`) |
 
 An explicit output directory (positional or `--out`) always wins over these. See `.env.example`.
@@ -199,6 +214,7 @@ npm run docs:sphinx
 
 ## 7. Best Practices for Subagents
 
+0. **Run `detect` first** on unfamiliar URLs (`--json`), then `--run` or the specific command it prints. It picks GitHub/DeepWiki templates and sidebar-aware crawling for you.
 1. **Use Concurrency `-c 5`**: Always pass `-c 5` (or higher depending on machine resources) for significantly faster crawls.
 2. **Rely on Resume Skipping**: Do not use `--force` unless explicitly requested to re-download existing pages. The default behavior checks `docs.db` and skips downloading existing documents while still extracting child links.
 3. **URL Inputs for `github-docs`**: When handling GitHub URLs, pass only the URL to `npm run github-docs -- <url>`. The module will handle `awesome` classification, README fetching, and sub-tree discovery automatically.

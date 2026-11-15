@@ -11,7 +11,7 @@ import { writeFile, mkdir } from 'fs/promises';
 import { relative } from 'path';
 import { extractNav } from './nav/registry';
 import { planLayout, buildTreeJson } from './nav/layout';
-import { matchPlannedPath, unlistedPath, shouldSavePage, relocateIfMoved } from './nav/crawlLayout';
+import { matchPlannedPath, unlistedPath, shouldSavePage, relocateIfMoved, redirectTarget } from './nav/crawlLayout';
 import { LayoutPlan } from './nav/types';
 
 /** Totals returned by {@link main}. */
@@ -364,6 +364,15 @@ export async function main(
           if (!shouldSavePage(response ? response.status() : undefined)) {
             totalHttpErrors++;
             logger.warn(`W#${workerId}`, `HTTP ${status} for ${url}; not saved`);
+            continue;
+          }
+
+          // A redirect alias is not saved: the final page is crawled under its own URL instead.
+          const redirectedTo = redirectTarget(url, page.url());
+          if (redirectedTo) {
+            if (!isVisited) totalDownloaded--;
+            if (isUrlInScope(redirectedTo, startUrl, scope)) queue.add(redirectedTo);
+            logger.debug(`W#${workerId}`, `[REDIRECT] ${url} -> ${redirectedTo}; queued final URL, alias not saved`);
             continue;
           }
 

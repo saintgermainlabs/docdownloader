@@ -6,6 +6,9 @@ A powerful TypeScript-based web crawler and documentation harvester that downloa
 
 ## Key Features
 
+- **`detect` any URL**: reports what documentation is there (docs site + sidebar tree, GitHub doc sets, DeepWiki wiki, `llms.txt`, sitemap, PDFs) and the command for each; `--run` downloads it.
+- **Keeps the sidebar tree**: crawled docs are saved in the site's own category/folder structure, numbered in sidebar order, with a `_tree.json` map.
+- **Provider templates**: GitHub (scans the repo for every doc set, reads `mkdocs.yml` / `SUMMARY.md` / Docusaurus / Fumadocs sidebars) and DeepWiki (via its public MCP server).
 - **SPA & Dynamic Page Support**: Uses Playwright headless Chromium browser to render JavaScript-heavy sites.
 - **HTML to Markdown Conversion**: Converts web content using Turndown with code block syntax highlighting and clean heading structures.
 - **Unified SQLite Tracking (`./docs.db`)**: Centralized tracking database recording metadata (`sources` table) and visited pages (`visited_urls` table).
@@ -71,6 +74,32 @@ npm run build
 
 ## Usage Guide
 
+### 0. Detect: find out what a URL offers
+
+```bash
+npm run detect -- "https://langfuse.com/docs"
+```
+
+```
+langfuse.com  (https://langfuse.com/docs)
+
+✔ Docs site        Fumadocs · sidebar tree found: 4 sections, 158 pages
+    → doc-dl crawl https://langfuse.com/docs   [recommended]
+• Documents        3 files linked — need Docling conversion (not yet supported)
+• llms.txt         page index, 50 links (no categories)
+...
+```
+
+```bash
+npm run detect -- "https://langfuse.com/docs" --run -c 5      # run the recommended workflow
+npm run detect -- "https://github.com/mkdocs/mkdocs" --run      # every doc set in the repo
+npm run detect -- "https://github.com/o/r" --run --only skills  # just one kind
+npm run detect -- "https://deepwiki.com/mkdocs/mkdocs" --run    # DeepWiki wiki, in topic order
+npm run detect -- "<url>" --json                                # machine-readable, for agents
+```
+
+`ddocs <url>` / `docs_dl <url>` run `detect --run` automatically. See [GUIDE.md](GUIDE.md#30-detect-start-here) for every finding kind and exit code.
+
 ### 1. Web Crawler (`npm start` or `node dist/src/index.js`)
 
 ```bash
@@ -88,7 +117,14 @@ npm start -- "https://docs.openclaw.ai/" --force
 
 # Enable verbose step-by-step debug logging
 npm start -- "https://docs.openclaw.ai/" --debug -c 5
+
+# Save by URL path instead of the sidebar tree
+npm start -- "https://docs.openclaw.ai/" --layout url
 ```
+
+By default (`--layout nav`) pages are saved in the site's **sidebar structure**: numbered category and folder directories in sidebar order, frontmatter with `title` and `source_url`, a `_tree.json` map, and `_unlisted/` for crawled pages that are not in the sidebar. Details: [GUIDE.md §4.1](GUIDE.md#41-sidebar-layout---layout-nav-the-default).
+
+**Browser:** run `npx playwright install chromium` once, or use an installed browser with `DOC_DL_BROWSER_CHANNEL=chrome` (or `DOC_DL_CHROMIUM_PATH=/path/to/chromium`).
 
 ### 1.1 Debug Mode Configuration (`mise.toml`)
 
@@ -229,6 +265,12 @@ Run unit and integration tests:
 npm test
 ```
 
+Live tests hit real sites (Langfuse, GitHub) and need a browser:
+
+```bash
+npm run test:live          # add DOC_DL_BROWSER_CHANNEL=chrome to use an installed Chrome
+```
+
 ---
 
 ## Project Structure
@@ -236,6 +278,9 @@ npm test
 ```
 .
 ├── src/
+│   ├── cli/            # detect command
+│   ├── sources/        # URL probe, source handlers, GitHub & DeepWiki templates
+│   ├── nav/            # sidebar tree extraction and numbered layout
 │   ├── crawler/        # Playwright browser manager, queue, & URL normalizer
 │   ├── converter/      # HTML to Markdown converter
 │   ├── github_docs/    # Automatic GitHub API downloader & tree scanner

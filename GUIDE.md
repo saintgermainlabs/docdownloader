@@ -13,6 +13,7 @@ Doc-DL turns documentation into local Markdown files and keeps an index of what 
 
 | Mode | Input | What happens | Entry point |
 |---|---|---|---|
+| **Detect** | Any URL | Probes the URL (no download) and reports what documentation is there and the command for each part; `--run` executes the recommended workflow | `src/cli/detect.ts`, `src/sources/` |
 | **Crawl** | A docs site URL | Headless Chromium renders each page (works on SPAs), converts HTML → Markdown, follows in-scope links | `src/index.ts` |
 | **Clip** | One page URL | Extracts the `article`/`main` content of a single page, adds YAML frontmatter | `src/scripts/clip.ts` |
 | **GitHub docs** | A GitHub repo URL | Uses the GitHub API to fetch `README` plus `docs/`, `usecases/`, `categories/` (or a chosen subtree) as raw files | `src/github_docs/` |
@@ -50,6 +51,29 @@ npm run build
 
 ## 3. Command reference
 
+### 3.0 Detect (start here)
+
+```bash
+npm run detect -- <url> [--json] [--run] [--only <kinds>] [--layout nav|url] [crawl options]
+ddocs detect <url>            # or: node dist/src/cli/detect.js <url>
+```
+
+`detect` probes the URL with plain HTTP (the page, `/llms.txt`, `/sitemap.xml`), recognises docs frameworks and sidebar trees, and asks every source handler what it can do. It prints one line per finding: a runnable ✔ with its command, or an informational •.
+
+| Finding | Source | Runnable |
+|---|---|---|
+| `docs-site` | Docs site, with sidebar tree when recognised (Fumadocs, or any site via the browser fallback) | ✔ crawl |
+| `doc-folder`, `readme`, `skills` | **GitHub template**: one per documentation set in the repo; doc folders with `mkdocs.yml`, `SUMMARY.md`, Docusaurus `sidebars.*` or Fumadocs `meta.json` keep their sidebar order | ✔ |
+| `wiki` | **DeepWiki template** (`deepwiki.com/<owner>/<repo>`), read via DeepWiki's public MCP server | ✔ |
+| `documents` | Linked PDF/Office files: need Docling conversion (not supported yet) | • |
+| `llms-txt`, `sitemap` | Site indexes (no categories) | • |
+| `page` | Single-page clip (fallback) | ✔ |
+| `warning` | e.g. GitHub rate limit (set `GITHUB_TOKEN`) or a truncated repo tree | • |
+
+When a template (GitHub, DeepWiki) recognises the URL, generic findings are dropped. `--run` runs the top runnable finding; for a GitHub repo it runs **every** runnable documentation set, each into its own subfolder (`--only doc-folder,skills` narrows it). Passthrough options for the run: `-c/--concurrency`, `-f/--force`, `-o/--out`, `--db`, `--layout`, `-d/--debug`.
+
+Exit codes: `0` success, `1` URL unreachable / invalid arguments / a run failed, `2` `--run` found nothing runnable.
+
 There are three layers of commands. They all end up running the compiled JS in `dist/`.
 
 ```
@@ -73,6 +97,7 @@ ddocs crawl <url> [outputDir] [options]
 | `-s, --scope <subfolder\|website>`, `--subfolder`, `--website` | `subfolder`: only URLs under the start path. `website`: whole origin | `subfolder` |
 | `--name`, `--description`, `--slug` | Source metadata in the index | hostname / empty / derived from URL |
 | `--db <path>` | SQLite file | `./docs.db` |
+| `--layout <nav\|url>` | `nav`: folders follow the site's sidebar tree (see §4.1); `url`: folders follow URL paths | `nav` |
 | `-f, --force` | Re-download pages already in the index | off |
 | `-d, --debug` | Verbose logging | off (or env) |
 
@@ -135,14 +160,10 @@ npm run import-docs -- --dir=output/coolify --slug=coolify --name="Coolify Docs"
 
 ### 3.7 Bash wrappers (`bin/`)
 
-- **`docs_dl <url> [opts]`**: picks a mode automatically and writes into an Obsidian vault:
-  1. GitHub URL containing `skill`/`skills`/`agent-skills` → skills
-  2. Other GitHub URL → github-docs
-  3. URL path containing `/docs`, `/documentation`, `/guide`, `/manual` → crawl
-  4. Anything else → clip
+- **`docs_dl <url> [opts]`**: without a mode flag, runs `detect <url> --run` and writes into an Obsidian vault (or `KNOWLEDGE_ROOT`).
 
   Flags: `-s/-c/-w/-g` force a mode; `-v <vault>`, `-j <N>`, `-t`, `-n`, `-f`, `-d`, `-o` (open in Obsidian).
-- **`ddocs <command>`**: sub-command router: `dl`, `skill`, `clip`, `crawl`, `gh`, `batch`, `import`, `vault [info|open|ls]`, `build`, `test`. `ddocs <url>` is the same as `docs_dl <url>`.
+- **`ddocs <command>`**: sub-command router: `detect`, `dl`, `skill`, `clip`, `crawl`, `gh`, `batch`, `import`, `vault [info|open|ls]`, `build`, `test`. `ddocs <url>` is the same as `docs_dl <url>`.
 
 Both rebuild `dist/` if it is missing, and work out the root in this order: `KNOWLEDGE_ROOT` → `OBSIDIAN_VAULT_PATH` → `obsidian` CLI → `~/obsidian-vaults/{agent/,}<vault>` → `~/Documents/Obsidian/<vault>` → `/srv/knowledge` (only when `HOST_ENV=remote`) → `$PWD/output`. The vault name comes from `OBSIDIAN_VAULT` (default `second-brain`).
 
@@ -173,6 +194,31 @@ The final directory is `<base>/<slug>`. Crawled pages are saved by URL path: `/d
 **Slug derivation** (`extractDefaultSlug`): the first path segment that is not generic (`docs`, `api`, `en`, `v2`, `latest`, …), then a specific subdomain (`hermes-agent.nousresearch.com` → `hermes-agent`), then the full host for `docs.*` hosts, then the first host label.
 
 ---
+
+### 4.1 Sidebar layout (`--layout nav`, the default)
+
+When the crawled site's sidebar tree is recognised, pages are saved by **sidebar position**, not URL path:
+
+```
+langfuse/
+  _tree.json                                  # full tree: names, order, source URLs, saved paths
+  01-overview.md
+  02-get-started-with/                        # non-clickable category (separator)
+    01-tracing.md
+    02-prompt-and-skill-management/           # expandable folder
+      01-prompt-management.md
+      02-skill-management.md
+  _unlisted/docs/...                          # crawled pages that are not in the sidebar, by URL path
+```
+
+- Numbers keep sidebar order (`01-`…, `001-` once a folder has 100+ items); a folder's own page is `00-index.md`.
+- Each file starts with frontmatter `title` and `source_url`.
+- A page listed twice is saved once; `_tree.json` points to it with `ref`. External links are recorded as `external` and not downloaded.
+- Redirect aliases are not saved; the final page is crawled under its own URL. Pages returning HTTP 4xx/5xx are not saved.
+- On a re-crawl, a page whose sidebar position changed is moved to its new path.
+- How the tree is found: the Fumadocs page tree embedded in the page; otherwise a browser fallback opens every collapsed sidebar folder (max 500 clicks / 60 s) and reads the menu. If neither finds a tree, the crawl uses URL layout and says so.
+
+The GitHub and DeepWiki templates use the same layout and `_tree.json`.
 
 ## 5. The index database
 
@@ -239,21 +285,21 @@ resolveOutputDir, resolveSkillsDir, resolveClippingDir, resolveKnowledgeRoot
 
 ## 8. Known issues and gaps
 
-Status of the test suite: **62/62 pass** (`npm test`, 2026-11-15).
+Status of the test suite: **153 pass** (`npm test`, 2026-11-15); live tests (`npm run test:live`) 3/3.
 
-Fixed in the public-release cleanup: hardcoded home-directory paths (now `./output` + env vars), the crawler's required `outputDir` (now optional, matching the docs and tests), `docs_dl` passing GitHub flags that were ignored, `DEBUG=1` on by default in `mise.toml`, leftover bootstrap files, and `@neon/config` as a runtime dependency (now a dev dependency).
+Fixed: hardcoded home-directory paths, required crawl `outputDir`, ignored `docs_dl` GitHub flags, `DEBUG=1` default, leftover files, `@neon/config` as runtime dependency, HTTP error pages being saved, and `docs_dl`'s URL-regex guessing (now `detect`).
 
 Still open:
 
 | # | Issue | Where |
 |---|---|---|
 | 1 | `relative_file_path` is not consistently relative. The crawler stores `join(outputDir, file)`, which is absolute when `outputDir` is absolute. GitHub/skills store a path relative to `cwd`. | `storage/fileSystem.ts`, `github_docs/downloader.ts` |
-| 2 | HTTP status is not checked. 404/500 pages are converted and saved like any other page. | `src/index.ts` worker |
-| 3 | No `robots.txt`, rate limiting, sitemap seeding, max-page/max-depth limit, or retry. | crawler |
-| 4 | The crawler converts the full page rather than the main content. Clip already has `article`/`main` selection that could be shared. | `src/index.ts` vs `src/scripts/clip.ts` |
-| 5 | `docs_dl` auto-detect sends any GitHub URL containing `skill` to the skills downloader. | `bin/docs_dl` |
-| 6 | Obsidian-specific behaviour (vault lookup, `Documents/` vs `Documentation/`, `obsidian` CLI) still lives in core path logic and the bash wrappers. A plugin is the natural home. | `paths.ts`, `bin/*` |
-| 7 | Names are inconsistent: npm `ai-doc-downloader`, repo `docdownloader`, install dir `doc-dl`, CLI `ddocs`. Pick one before publishing to npm. | `package.json`, `install.sh` |
+| 2 | No `robots.txt`, rate limiting, sitemap seeding, max-page/max-depth limit, or retry. | crawler |
+| 3 | The crawler converts the full page rather than the main content. Clip already has `article`/`main` selection that could be shared. | `src/index.ts` vs `src/scripts/clip.ts` |
+| 4 | Fumadocs folder index pages are not in the embedded tree, so a section's overview page can land in `_unlisted/`. | `nav/extractors/fumadocs.ts` |
+| 5 | Sidebar readers exist for Fumadocs (live sites) and MkDocs/mdBook/Docusaurus/Fumadocs configs (repos). Other live frameworks (Docusaurus, Mintlify, GitBook, Nextra) use the slower browser fallback. | `src/nav/extractors/` |
+| 6 | Obsidian-specific behaviour (vault lookup, `Documents/` vs `Documentation/`, `obsidian` CLI) still lives in core path logic and the bash wrappers. | `paths.ts`, `bin/*` |
+| 7 | Names are inconsistent: npm `ai-doc-downloader`, repo `docdownloader`, install dir `doc-dl`, CLI `ddocs`, docs say `doc-dl`. Pick one before publishing to npm. | `package.json`, `install.sh` |
 
 ---
 
@@ -278,9 +324,9 @@ Suggested order:
 
 1. ~~Fix the CLI contract~~ (done: `outputDir` is optional).
 2. ~~Remove hardcoded paths~~ (done). Next: an optional config file (`doc-dl.config.{json,yaml}`), and move the vault and `/srv/knowledge` logic into plugins.
-3. **Define a plugin interface**, for example hooks such as `resolveOutputDir`, `beforeConvert(html, url)`, `afterSave(record)`, and source handlers `canHandle(url)` / `download(url, ctx)`, so that `github`, `skills`, and future handlers (sitemaps, OpenAPI, PDFs) register themselves instead of being hard-wired into `docs_dl`.
-4. **Crawler hardening**: status-code filtering, main-content selection shared with clip, limits, politeness, and retries.
-5. **One CLI binary** (`doc-dl <url>` with sub-commands) written in TypeScript, replacing the two bash wrappers. Mode auto-detection moves into core and calls the source handlers.
+3. ~~Define a plugin interface~~ (started: source handlers and templates in `src/sources/`, sidebar extractors in `src/nav/`, both with `register…()` registries). Next: let external packages register handlers, and add a Docling handler plus a docling-context output.
+4. **Crawler hardening**: ~~status-code filtering~~ (done), main-content selection shared with clip, limits, politeness, and retries.
+5. **One CLI binary** (`doc-dl <url>` with sub-commands) written in TypeScript, replacing the two bash wrappers. ~~Mode auto-detection moves into core~~ (done: `detect`).
 6. **Packaging**: license, `files` whitelist, typings and `engines` are in place. Remaining: settle on one name, then publish to npm.
 
 ---
@@ -295,8 +341,12 @@ src/
   crawler/urlUtils.ts       normalizeUrl, getSubfolderPath, isUrlInScope
   converter/markdown.ts     Turndown + cleanup rules
   storage/database.ts       VisitedDatabase (SQLite | Postgres), extractDefaultSlug, computeHash
-  storage/fileSystem.ts     URL path → .md file
+  storage/fileSystem.ts     URL path → .md file, or explicit path + frontmatter
   storage/paths.ts          output/knowledge-root resolution
+  cli/detect.ts             detect command: report / --json / --run
+  sources/                  probe, handler registry, handlers, templates (github, deepwiki), MCP client
+  nav/                      sidebar tree types, layout planner, extractors (fumadocs, dom-expand,
+                            mkdocs, summary-md, docusaurus, fumadocs-meta), crawl layout helpers
   github_docs/              GitHub API client, downloader, CLI
   skills/                   agent-skill discovery + installer, CLI
   scripts/clip.ts           single-page clipper

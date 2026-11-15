@@ -3,7 +3,7 @@ import { test, describe } from 'node:test';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { matchPlannedPath, unlistedPath, shouldSavePage, relocateIfMoved } from '../src/nav/crawlLayout';
+import { matchPlannedPath, unlistedPath, shouldSavePage, relocateIfMoved, redirectTarget } from '../src/nav/crawlLayout';
 import { planLayout } from '../src/nav/layout';
 import { FileStorage } from '../src/storage/fileSystem';
 import { parseCliArgs } from '../src/index';
@@ -29,6 +29,15 @@ describe('crawl layout helpers', () => {
     assert.strictEqual(unlistedPath(new URL('https://x/docs/a/b/')), '_unlisted/docs/a/b/index.md');
     assert.strictEqual(unlistedPath(new URL('https://x/docs/a')), '_unlisted/docs/a.md');
     assert.strictEqual(unlistedPath(new URL('https://x/')), '_unlisted/index.md');
+  });
+
+  test('redirectTarget returns the final URL only when it differs', () => {
+    assert.strictEqual(
+      redirectTarget('https://x/docs/a', 'https://x/docs/b'),
+      'https://x/docs/b'
+    );
+    assert.strictEqual(redirectTarget('https://x/docs/a', 'https://x/docs/a/'), undefined);
+    assert.strictEqual(redirectTarget('https://x/docs/a', 'https://x/docs/a#top'), undefined);
   });
 
   test('shouldSavePage rejects HTTP errors only', () => {

@@ -15,6 +15,16 @@ export function unlistedPath(url: URL): string {
   return `_unlisted${path.replace(/\/$/, '/index')}.md`;
 }
 
+/**
+ * Returns the final URL when navigation was redirected to a different page
+ * (ignoring hash and trailing-slash differences), else undefined.
+ */
+export function redirectTarget(requested: string, final: string): string | undefined {
+  const a = navUrlKey(requested, requested);
+  const b = navUrlKey(final, final);
+  return a && b && a !== b ? b : undefined;
+}
+
 /** False for HTTP error responses (4xx/5xx); true otherwise, including unknown status. */
 export function shouldSavePage(status: number | undefined): boolean {
   return status === undefined || status < 400;
