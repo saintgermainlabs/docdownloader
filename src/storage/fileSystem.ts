@@ -42,6 +42,26 @@ export class FileStorage {
   }
 
   /**
+   * Saves Markdown at an explicit relative path, prefixed with YAML frontmatter.
+   *
+   * @param relPath - Path relative to the base directory (e.g. `02-get-started/01-tracing.md`).
+   * @param content - Markdown body.
+   * @param frontmatter - `title` and `source_url` written as quoted YAML strings.
+   */
+  async saveMarkdownAt(
+    relPath: string,
+    content: string,
+    frontmatter: { title: string; source_url: string }
+  ): Promise<SavedFileResult> {
+    const filePath = join(this.baseDir, relPath);
+    const header = `---\ntitle: ${JSON.stringify(frontmatter.title)}\nsource_url: ${JSON.stringify(frontmatter.source_url)}\n---\n\n`;
+    logger.debug('STORAGE', `Writing Markdown file to ${filePath} (${content.length} chars)`);
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, header + content, 'utf-8');
+    return { relativeFilePath: filePath };
+  }
+
+  /**
    * Maps a URL pathname to a relative `.md` file path.
    *
    * @param url - Input URL object.

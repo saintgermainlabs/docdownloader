@@ -7,6 +7,15 @@ import { FileStorage } from './storage/fileSystem';
 import { VisitedDatabase, computeHash, extractDefaultSlug } from './storage/database';
 import { resolveOutputDir, resolveSkillsDir, resolveClippingDir, resolveKnowledgeRoot, DEFAULT_OUTPUT_ROOT } from './storage/paths';
 import { logger, isDebugEnabled, setDebugMode, colors } from './utils/logger';
+import { writeFile, mkdir } from 'fs/promises';
+import { relative } from 'path';
+import { extractNav } from './nav/registry';
+import { planLayout, buildTreeJson } from './nav/layout';
+import { matchPlannedPath, unlistedPath, shouldSavePage, relocateIfMoved } from './nav/crawlLayout';
+import { LayoutPlan } from './nav/types';
+
+/** How crawled pages are laid out on disk: by sidebar tree (`nav`) or by URL path (`url`). */
+export type CrawlLayout = 'nav' | 'url';
 
 export { downloadSkill } from './skills/downloader';
 export { SkillDownloadOptions, SkillDownloadResult, SkillFileEntry, DownloadedSkillFile } from './skills/types';
@@ -39,6 +48,8 @@ export interface CliOptions {
   help: boolean;
   /** Enable verbose step-by-step debug logging */
   debug: boolean;
+  /** On-disk layout: sidebar tree (`nav`, default) or URL path (`url`) */
+  layout: CrawlLayout;
 }
 
 /**
@@ -59,6 +70,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
   let slug: string | undefined;
   let help = false;
   let debug = isDebugEnabled();
+  let layout: CrawlLayout = 'nav';
 
   const positionals: string[] = [];
 
@@ -89,6 +101,12 @@ export function parseCliArgs(argv: string[]): CliOptions {
       description = argv[++i];
     } else if (arg.startsWith('--description=') || arg.startsWith('--desc=')) {
       description = arg.split('=')[1];
+    } else if (arg === '--layout') {
+      const val = argv[++i];
+      if (val === 'nav' || val === 'url') layout = val;
+    } else if (arg.startsWith('--layout=')) {
+      const val = arg.split('=')[1];
+      if (val === 'nav' || val === 'url') layout = val;
     } else if (arg === '--slug') {
       slug = argv[++i];
     } else if (arg.startsWith('--slug=')) {
@@ -149,7 +167,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     outputDir = DEFAULT_OUTPUT_ROOT;
   }
 
-  return { url, outputDir, scope, concurrency, dbPath, force, name, description, slug, help, debug };
+  return { url, outputDir, scope, concurrency, dbPath, force, name, description, slug, help, debug, layout };
 }
 
 /**
@@ -165,6 +183,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
  * @param description - Summary description of the documentation source.
  * @param slug - Source slug key.
  * @param debug - Enable verbose step-by-step debug logging.
+ * @param layout - `nav` (default): save pages by sidebar tree when one is found; `url`: by URL path.
  */
 export async function main(
   startUrl: string,
@@ -176,7 +195,8 @@ export async function main(
   name?: string,
   description?: string,
   slug?: string,
-  debug?: boolean
+  debug?: boolean,
+  layout: CrawlLayout = 'nav'
 ): Promise<void> {
   if (!startUrl) {
     throw new Error('Missing required positional argument: startUrl');
@@ -233,11 +253,30 @@ export async function main(
   queue.add(initialUrl);
   logger.debug('QUEUE', `Enqueued initial seed URL: ${initialUrl} (Queue length: ${queue.size})`);
 
+  let navPlan: LayoutPlan | undefined;
+  let navFramework = '';
+  if (layout === 'nav') {
+    navPlan = await planNavLayout(browser, initialUrl, startUrl, scope);
+    if (navPlan) {
+      navFramework = (navPlan as LayoutPlan & { framework?: string }).framework || '';
+      for (const planned of navPlan.paths.keys()) queue.add(planned);
+      logger.step('NAV', `Sidebar tree found (${navFramework}): ${navPlan.paths.size} page(s) planned`);
+    } else {
+      logger.warn('NAV', 'no sidebar tree found; using URL layout');
+    }
+  }
+
+  const targetPathFor = (pageUrl: string): string | undefined => {
+    if (!navPlan) return undefined;
+    return matchPlannedPath(navPlan, pageUrl) ?? unlistedPath(new URL(pageUrl));
+  };
+
   let activeWorkers = 0;
   let totalProcessed = 0;
   let totalDownloaded = 0;
   let totalSkipped = 0;
   let totalErrors = 0;
+  let totalHttpErrors = 0;
 
   const workerCount = Math.max(1, concurrency);
   logger.step('WORKERS', `Spawning ${workerCount} concurrent crawler worker(s)...`);
@@ -309,6 +348,24 @@ export async function main(
           const status = response ? response.status() : 'cached/unknown';
           logger.debug(`W#${workerId}`, `Page loaded in ${navTime}ms (HTTP ${status}) -> ${page.url()}`);
 
+          if (!shouldSavePage(response ? response.status() : undefined)) {
+            totalHttpErrors++;
+            logger.warn(`W#${workerId}`, `HTTP ${status} for ${url}; not saved`);
+            continue;
+          }
+
+          const targetPath = targetPathFor(url);
+          if (isVisited && targetPath) {
+            const record = await db.getRecord(url);
+            if (record) {
+              const oldRel = relative(finalOutputDir, record.relativeFilePath);
+              if (await relocateIfMoved(finalOutputDir, oldRel, targetPath)) {
+                await db.recordVisited({ ...record, relativeFilePath: join(finalOutputDir, targetPath) });
+                logger.debug(`W#${workerId}`, `Moved ${oldRel} -> ${targetPath} (sidebar changed)`);
+              }
+            }
+          }
+
           // Settle window for dynamic SPA components
           await new Promise((r) => setTimeout(r, 200));
 
@@ -323,7 +380,9 @@ export async function main(
             logger.debug(`W#${workerId}`, `Converted to ${markdown.length} chars of Markdown`);
 
             logger.debug(`W#${workerId}`, `Saving Markdown file to storage...`);
-            const saved = await storage.saveMarkdown(new URL(url), markdown);
+            const saved = targetPath
+              ? await storage.saveMarkdownAt(targetPath, markdown, { title: pageTitle, source_url: url })
+              : await storage.saveMarkdown(new URL(url), markdown);
             const hash = computeHash(markdown);
             logger.debug(`W#${workerId}`, `Saved file: ${saved.relativeFilePath} (SHA-256: ${hash.substring(0, 12)}...)`);
 
@@ -392,6 +451,13 @@ export async function main(
 
     const workers = Array.from({ length: workerCount }, (_, i) => worker(i + 1));
     await Promise.all(workers);
+
+    if (navPlan) {
+      await mkdir(finalOutputDir, { recursive: true });
+      const treeJson = buildTreeJson(navPlan, { source: startUrl, framework: navFramework });
+      await writeFile(join(finalOutputDir, '_tree.json'), JSON.stringify(treeJson, null, 2), 'utf-8');
+      logger.debug('NAV', `Wrote ${finalOutputDir}/_tree.json`);
+    }
   } finally {
     logger.step('CLEANUP', 'Closing browser instance and SQLite database...');
     await browser.close();
@@ -400,10 +466,43 @@ export async function main(
     const elapsedSeconds = ((Date.now() - startTime) / 1000).toFixed(2);
     logger.step('COMPLETE', `Documentation crawl finished in ${elapsedSeconds}s`);
     logger.info(
-      `Summary: ${totalProcessed} total URLs processed (${totalDownloaded} downloaded, ${totalSkipped} skipped), ${totalErrors} error(s)`
+      `Summary: ${totalProcessed} total URLs processed (${totalDownloaded} downloaded, ${totalSkipped} skipped), ${totalHttpErrors} HTTP error page(s) not saved, ${totalErrors} error(s)`
     );
     logger.info(`Output Directory: ${finalOutputDir}`);
     logger.info(`SQLite Database:  ${finalDbPath}`);
+  }
+}
+
+/**
+ * Loads the start page once and plans a sidebar-tree layout for the crawl.
+ *
+ * @returns The plan (with `framework` attached), or `undefined` if no tree was found.
+ */
+async function planNavLayout(
+  browser: BrowserManager,
+  initialUrl: string,
+  startUrl: string,
+  scope: CrawlScope
+): Promise<(LayoutPlan & { framework: string }) | undefined> {
+  const page = await browser.newPage();
+  try {
+    const response = await page.goto(initialUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    if (response && response.status() >= 400) return undefined;
+    await new Promise((r) => setTimeout(r, 200));
+    const html = await page.content();
+    const nav = await extractNav({ html, page, url: page.url() });
+    if (!nav) return undefined;
+    const plan = planLayout(nav.nodes, {
+      baseUrl: page.url(),
+      inScope: (u) => isUrlInScope(u, startUrl, scope),
+    });
+    if (plan.paths.size === 0) return undefined;
+    return Object.assign(plan, { framework: nav.framework });
+  } catch (error: any) {
+    logger.debug('NAV', `Sidebar extraction failed: ${error.message}`);
+    return undefined;
+  } finally {
+    await page.close().catch(() => undefined);
   }
 }
 
@@ -434,6 +533,8 @@ OPTIONS:
   --description, --desc <desc>  Summary description of the service or documentation
   --slug <slug>                 Custom source slug key (default: first URL path segment)
   --db <path>                   Path to SQLite database file (default: ./docs.db)
+  --layout <nav|url>            nav (default): folders follow the site's sidebar tree, numbered in
+                                sidebar order, plus _tree.json; url: folders follow URL paths
   --force, -f                   Force re-downloading previously visited pages
   --debug, -d, --verbose        Enable verbose step-by-step debug logging
   --help, -h                    Display this help message
@@ -493,7 +594,8 @@ if (require.main === module) {
     options.name,
     options.description,
     options.slug,
-    options.debug
+    options.debug,
+    options.layout
   ).catch((err) => {
     logger.error('MAIN', `Fatal error during crawl execution: ${err.message}`, err);
     process.exit(1);
