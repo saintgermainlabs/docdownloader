@@ -1,0 +1,43 @@
+schema: spec-driven
+
+# Project context (optional)
+# Constraints the code does not state on its own:
+#   - Keep the SQLite index (./docs.db, or DATABASE_URL for Postgres). It tracks sources and
+#     downloads for resume and change detection; it is expected to grow more capable, so do not
+#     remove it or replace it with flat files.
+#   - The index holds metadata only (paths, titles, timestamps, content hashes). Page content is
+#     written as Markdown files on disk. Do not add content columns to the index.
+#   - Docling is the planned conversion backend for documents (PDF/Office, see GUIDE.md roadmap).
+#     Doc-DL is meant to wrap it; a Docling handler is not built yet.
+#   - Remote output paths (HOST_ENV=remote, /srv/knowledge) are used in production; keep them working.
+#
+# Project context (optional, original template)
+# Add only constraints that should guide OpenSpec artifacts and workflows.
+# Include constraints an agent cannot infer by reading the code.
+# Keep general project documentation and discoverable codebase facts out.
+# Example:
+#   context: |
+#     Designs and tasks must cover Windows, macOS, and Linux
+#     Write all artifacts in Spanish
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always state what is out of scope
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing
